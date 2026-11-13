@@ -141,3 +141,22 @@ test('article editor, scheduling, images, corrections, pause, verified, approval
   const V = call(env, token({ email: 'view@x.com' })); assert.equal((await V('/api/site/notice', { on: false })).status, 403); assert.equal((await V('/api/site/get', null, 'GET')).status, 200);
   assert.ok((await S('/api/site/attention', null, 'GET')).json.items.length > 0); assert.equal((await S('/api/site/hits', null, 'GET')).json.ok, true);
 });
+
+test('incidents: added to the shared overlay, validated, listed, removable, versioned', async () => {
+  const env = mkenv(); const S = call(env, token());
+  env.db.exec("CREATE TABLE overlay (k TEXT PRIMARY KEY, v TEXT NOT NULL, at TEXT NOT NULL)");
+  env.db.prepare("INSERT INTO overlay (k,v,at) VALUES ('crimes',?,?)").run(JSON.stringify([{ date: '2026-11-01', county: 'Nairobi', place: 'Ruai', summary: 'Old crime item here' }]), '2026-11-07T00:00:00Z');
+  const today = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
+  const ok = await S('/api/site/incident', { op: 'add', k: 'crimes', county: 'Kilifi', date: today, place: 'Mtwapa <b>', en: 'Two suspects arrested over a robbery', killed: '0', link: 'https://example.com/a' });
+  assert.equal(ok.status, 200);
+  const rows = JSON.parse(env.db.prepare("SELECT v FROM overlay WHERE k='crimes'").get().v);
+  assert.equal(rows.length, 2, 'existing rows kept'); assert.equal(rows[0].county, 'Kilifi'); assert.ok(!rows[0].place.includes('<')); assert.match(rows[0].id, /^a/);
+  assert.equal(env.db.prepare("SELECT count(*) n FROM site_versions WHERE k='overlay:crimes'").get().n, 1, 'previous list saved for undo');
+  for (const bad of [{ county: 'Atlantis' }, { date: '2099-01-01' }, { en: 'short' }, { link: 'javascript:alert(1)' }]) assert.equal((await S('/api/site/incident', { op: 'add', k: 'crimes', county: 'Kilifi', date: today, en: 'A long enough description', ...bad })).status, 400);
+  assert.equal((await S('/api/site/incident', { op: 'add', k: 'nope', county: 'Kilifi', date: today, en: 'A long enough description' })).status, 400);
+  const lr = await S('/api/site/incidents', null, 'GET'); const ls = lr.json; assert.equal(ls.rows.length, 2); assert.equal(ls.counties.length, 47);
+  assert.equal((await S('/api/site/incident', { op: 'remove', k: 'crimes', sig: ls.rows[0].sig })).status, 200);
+  assert.equal(JSON.parse(env.db.prepare("SELECT v FROM overlay WHERE k='crimes'").get().v).length, 1);
+  assert.equal((await S('/api/site/incident', { op: 'add', k: 'reports', county: 'Mandera', date: today, en: 'Reported road closure near town' })).status, 200);
+  assert.ok(env.db.prepare("SELECT 1 FROM site_audit WHERE act LIKE 'incident:%'").get());
+});

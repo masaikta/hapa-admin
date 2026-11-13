@@ -2,7 +2,7 @@
 // the public worker reads notice, contacts and flags (GET /api/site). Every change is written to an audit log.
 const READY = new WeakSet();
 export const PUBLIC_PAGES = ['/contacts/', '/trip/', '/print/', '/scam/', '/analysis/'];
-export const SCOPES = ['notice', 'alert', 'contacts', 'articles', 'home', 'feedback', 'corrections'];
+export const SCOPES = ['notice', 'alert', 'contacts', 'articles', 'home', 'feedback', 'corrections', 'incidents'];
 const CATS = ['em', 'pol', 'amb', 'fire', 'hosp', 'mh', 'gbv', 'law', 'dis', 'oth', 'stn'];
 const clean = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u001f<>]/g, ' ').trim().slice(0, n);
 // A date or a date and time (East Africa Time), e.g. 2026-11-13 or 2026-11-13T14:30.
@@ -16,6 +16,7 @@ export async function ensureSite(env) {
     env.DB.prepare('CREATE TABLE IF NOT EXISTS site_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, k TEXT, v TEXT, at TEXT, who TEXT)'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS site_images (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, data TEXT, at TEXT, who TEXT)'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS page_hits (day TEXT, path TEXT, n INTEGER DEFAULT 0, PRIMARY KEY (day, path))'),
+    env.DB.prepare('CREATE TABLE IF NOT EXISTS overlay (k TEXT PRIMARY KEY, v TEXT NOT NULL, at TEXT NOT NULL)'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS site_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, who TEXT, act TEXT, detail TEXT)'),
   ]);
   READY.add(env.DB);
@@ -50,7 +51,38 @@ const DEF = {
   flags: {}, roles: { editors: [] }, schedule: {}, corrections: [], pending: [], pause: null, checks: null,
 };
 const SCOPE_OF = { notice: 'notice', alert: 'alert', home: 'home', contacts: 'contacts', corrections: 'corrections' };
-const QUEUE = ['site/notice', 'site/alert', 'site/home', 'site/contacts', 'site/article', 'site/article_save', 'site/schedule', 'site/correction'];
+
+const COUNTIES = ['Baringo','Bomet','Bungoma','Busia','Elgeyo-Marakwet','Embu','Garissa','Homa Bay','Isiolo','Kajiado','Kakamega','Kericho','Kiambu','Kilifi','Kirinyaga','Kisii','Kisumu','Kitui','Kwale','Laikipia','Lamu','Machakos','Makueni','Mandera','Marsabit','Meru','Migori','Mombasa',"Murang'a",'Nairobi','Nakuru','Nandi','Narok','Nyamira','Nyandarua','Nyeri','Samburu','Siaya','Taita Taveta','Tana River','Tharaka-Nithi','Trans Nzoia','Turkana','Uasin Gishu','Vihiga','Wajir','West Pokot'];
+const INC_KINDS = ['crimes', 'attacks', 'road_crashes', 'banditry', 'reports'];
+const sigOf = (k, r) => String(r.id || (r.date + '|' + (r.place || '') + '|' + String(r.summary || r.summary_en || '').slice(0, 40)));
+const incRow = (k, r) => ({ k, sig: sigOf(k, r), id: r.id || '', date: r.date, county: r.county || '', place: r.place || '', text: String(r.summary || r.summary_en || '').slice(0, 220), by: r.by || '' });
+async function ovRead(env, k) {
+  const r = await env.DB.prepare('SELECT v FROM overlay WHERE k=?').bind(k).first();
+  try { const a = JSON.parse(r && r.v); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+}
+async function ovWrite(env, k, list, who, detail) {
+  const old = await env.DB.prepare('SELECT v FROM overlay WHERE k=?').bind(k).first();
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO site_versions (k, v, at, who) VALUES (?,?,${NOW},?)`).bind('overlay:' + k, (old && old.v) || '[]', who),
+    env.DB.prepare(`INSERT INTO overlay (k, v, at) VALUES (?,?,${NOW}) ON CONFLICT(k) DO UPDATE SET v=excluded.v, at=excluded.at`).bind(k, JSON.stringify(list)),
+    env.DB.prepare(`INSERT INTO site_audit (at, who, act, detail) VALUES (${NOW},?,?,?)`).bind(who, 'incident:' + k, String(detail).slice(0, 300)),
+    env.DB.prepare('DELETE FROM site_versions WHERE k=? AND id NOT IN (SELECT id FROM site_versions WHERE k=? ORDER BY id DESC LIMIT 25)').bind('overlay:' + k, 'overlay:' + k),
+  ]);
+}
+const num = (v) => { if (v === '' || v == null) return null; const n = Math.floor(Number(v)); return Number.isFinite(n) && n >= 0 && n < 100000 ? n : null; };
+export function cleanIncident(k, b) {
+  const county = COUNTIES.find((c) => c === (b && b.county)); const d = String((b && b.date) || '').slice(0, 10);
+  if (!county || !date(d) || d > todayEAT()) return null;
+  const en = clean(b.en, 600), sw = clean(b.sw, 600), place = clean(b.place, 120), link = b.link ? okUrl(clean(b.link, 300)) : '', source = clean(b.source, 80);
+  if (en.length < 10 || (b.link && !link)) return null;
+  const base = { date: d, county, place, link: link || null, source: source || null };
+  if (k === 'reports') return { date: d, county, summary_en: en, summary_sw: sw || en };
+  if (k === 'attacks') return { ...base, summary: en, precision: 'day' };
+  if (k === 'road_crashes') return { ...base, summary: en, killed: num(b.killed), injured: num(b.injured) };
+  if (k === 'banditry') return { ...base, summary_en: en, summary_sw: sw || en, kind_en: clean(b.kind, 40) || 'Raid', kind_sw: clean(b.kind, 40) || 'Uvamizi', killed: num(b.killed), stolen: num(b.stolen), recovered: num(b.recovered) };
+  return { ...base, summary: en, kind: clean(b.kind, 60) || 'Crime', killed: num(b.killed), injured: num(b.injured) };
+}
+const QUEUE = ['site/notice', 'site/alert', 'site/home', 'site/contacts', 'site/article', 'site/article_save', 'site/schedule', 'site/correction', 'site/incident'];
 const todayEAT = () => new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
 const nowEAT = () => new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 16);
 const endOf = (v) => (v && v.length === 10 ? v + 'T23:59' : v);
@@ -180,6 +212,13 @@ async function inner(env, who, act, method, body) {
     if (!who.super) return [403, { ok: false, error: 'scope' }];
     const s = {}; for (const k of Object.keys(DEF)) if (k !== 'roles') s[k] = await read(env, k, DEF[k]);
     return [200, { ok: true, backup: { app: 'hapa-admin', v: 1, at: new Date().toISOString(), settings: s } }];
+  }
+  if (act === 'site/incidents' && method === 'GET') {
+    const bad = need('incidents'); if (bad) return bad;
+    const out = [];
+    for (const k of INC_KINDS) { const L = await ovRead(env, k); L.forEach((r) => { if (r && r.date) out.push(incRow(k, r)); }); }
+    out.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    return [200, { ok: true, rows: out.slice(0, 60), counties: COUNTIES }];
   }
   if (method !== 'POST') return [405, { ok: false, error: 'method' }];
   if (act === 'site/notice') {
@@ -356,6 +395,30 @@ async function inner(env, who, act, method, body) {
       await write(env, 'contacts', C, actor, 'import', 'contacts'); done.push('contacts');
     }
     return [200, { ok: true, done }];
+  }
+
+  if (act === 'site/incident') {
+    const bad = need('incidents'); if (bad) return bad;
+    const op = body && body.op, k = body && body.k;
+    if (!INC_KINDS.includes(k)) return [400, { ok: false, error: 'kind' }];
+    const L = await ovRead(env, k);
+    if (op === 'add') {
+      const r = cleanIncident(k, body);
+      if (!r) return [400, { ok: false, error: 'incident' }];
+      if (L.length >= 2000) return [400, { ok: false, error: 'limit' }];
+      r.id = 'a' + Date.now().toString(36); r.by = actor.slice(0, 80);
+      L.unshift(r);
+      await ovWrite(env, k, L, actor, 'added: ' + r.county + ' ' + r.date);
+      return [200, { ok: true }];
+    }
+    if (op === 'remove') {
+      const i = L.findIndex((r) => r && sigOf(k, r) === body.sig);
+      if (i < 0) return [404, { ok: false, error: 'notfound' }];
+      const [r] = L.splice(i, 1);
+      await ovWrite(env, k, L, actor, 'removed: ' + (r.county || '') + ' ' + (r.date || ''));
+      return [200, { ok: true }];
+    }
+    return [400, { ok: false, error: 'op' }];
   }
   return [404, { ok: false, error: 'notfound' }];
 }
