@@ -1,7 +1,7 @@
 // Hapa Admin: settings for the public site, on its own subdomain (admin.homesupport.co.ke), separate from Hapa Pro.
 // Two locks: Cloudflare Access in front, and this worker verifies the Access token itself and accepts only the super administrator.
 // Until ACCESS_TEAM and ACCESS_AUD are set it refuses everything, so a half-finished setup is never open.
-import { siteApi } from './site.js';
+import { siteApi, ensureSite, SCOPES } from './site.js';
 
 const SUPER_DEFAULT = ['masaikta@gmail.com'];
 export const isSuper = (env, email) => { const e = String(email || '').trim().toLowerCase(); return !!e && String(env.SUPER_ADMINS || SUPER_DEFAULT.join(',')).toLowerCase().split(',').map((x) => x.trim()).includes(e); };
@@ -37,15 +37,20 @@ export default {
     if (!env.ACCESS_TEAM || !env.ACCESS_AUD) return new Response('Hapa Admin is not switched on yet: the Cloudflare Access settings are missing.', { status: 503, headers: { 'cache-control': 'no-store' } });
     const email = await accessEmail(request, env);
     if (!email) return new Response('Sign in through Cloudflare Access.', { status: 403, headers: { 'cache-control': 'no-store' } });
-    if (!isSuper(env, email)) return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
+    // The super administrator has everything; a second admin named under Roles gets only the areas ticked for them.
+    let who = { email, super: isSuper(env, email), scopes: [] };
+    if (!who.super) {
+      try { await ensureSite(env); const r = await env.DB.prepare("SELECT v FROM site_settings WHERE k='roles'").first(); const ed = ((r && JSON.parse(r.v)) || {}).editors || []; const me = ed.find((x) => x.email === email); if (me) who.scopes = (me.scopes || []).filter((x) => SCOPES.includes(x)); } catch (e) { /* no roles yet */ }
+      if (!who.scopes.length) return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
+    }
     if (url.pathname.startsWith('/api/')) {
       const act = url.pathname.slice(5); // /api/site/<action>
       if (request.method === 'POST') {
         const o = request.headers.get('origin'); if (o && o !== url.origin) return J({ ok: false, error: 'origin' }, 403);
         if (!/application\/json/.test(request.headers.get('content-type') || '')) return J({ ok: false, error: 'type' }, 415);
       } else if (request.method !== 'GET') return J({ ok: false, error: 'method' }, 405);
-      let body = null; if (request.method === 'POST') { if (Number(request.headers.get('content-length') || 0) > 100000) return J({ ok: false, error: 'big' }, 413); try { body = (await request.json()) || {}; } catch (e) { body = {}; } }
-      try { const [st, js] = await siteApi(env, email, act, request.method, body); return J(js, st); } catch (e) { return J({ ok: false, error: 'db' }, 502); }
+      let body = request.method === 'GET' ? Object.fromEntries(url.searchParams) : null; if (request.method === 'POST') { if (Number(request.headers.get('content-length') || 0) > 100000) return J({ ok: false, error: 'big' }, 413); try { body = (await request.json()) || {}; } catch (e) { body = {}; } }
+      try { const [st, js] = await siteApi(env, who, act, request.method, body); return J(js, st); } catch (e) { return J({ ok: false, error: 'db' }, 502); }
     }
     const r = await env.ASSETS.fetch(request); const h = new Headers(r.headers);
     h.set('cache-control', 'no-store'); h.set('x-content-type-options', 'nosniff'); h.set('referrer-policy', 'no-referrer'); h.set('content-security-policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline' 'self'; frame-ancestors 'none'");

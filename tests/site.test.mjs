@@ -73,3 +73,28 @@ test('site settings: saved, validated and logged', async () => {
   const g = (await S('/api/site/get', null, 'GET')).json; assert.ok(g.audit.length >= 8); assert.ok(g.audit.every((a) => a.who === 'masaikta@gmail.com'));
   assert.deepEqual(g.settings.flags, { '/contacts/': false }); assert.equal('pro' in g.settings, false);
 });
+test('versions, restore, alert expiry, home, roles, backup', async () => {
+  const env = mkenv(); const S = call(env, token());
+  await S('/api/site/notice', { on: true, en: 'First' }); await S('/api/site/notice', { on: true, en: 'Second', from: '2026-11-13T08:30' });
+  const v = (await S('/api/site/versions?k=notice', null, 'GET')).json.rows; assert.equal(v.length, 2); assert.equal(v[0].v.en, 'Second'); assert.equal(v[0].v.from, '2026-11-13T08:30');
+  await S('/api/site/restore', { id: v[1].id }); assert.equal((await S('/api/site/get', null, 'GET')).json.settings.notice.en, 'First');
+  assert.equal((await S('/api/site/alert', { on: true, en: 'Flood' })).status, 400, 'alert needs an end time');
+  assert.equal((await S('/api/site/alert', { on: true, en: 'Flood', until: '2026-11-14T18:00' })).json.alert.until, '2026-11-14T18:00');
+  const h = (await S('/api/site/home', { h_en: 'Hi <b>', keys: [{ n: '999', l_en: 'Police' }, { n: 'x', l_en: 'Bad' }], featured: ['Good-Slug', 'bad slug!', 'good-slug'] })).json.home;
+  assert.equal(h.keys.length, 1); assert.deepEqual(h.featured, ['good-slug']); assert.ok(!h.h_en.includes('<'));
+  assert.equal((await S('/api/site/contacts', { op: 'hide_many', ids: ['a', 'b'] })).json.contacts.hidden.length, 2);
+  // second admin with limited scope
+  await S('/api/site/roles', { editors: [{ email: 'Ed@X.com', scopes: ['notice', 'bogus'] }, { email: 'nope', scopes: ['notice'] }] });
+  assert.deepEqual((await S('/api/site/get', null, 'GET')).json.settings.roles.editors, [{ email: 'ed@x.com', scopes: ['notice'] }]);
+  const E = call(env, token({ email: 'ed@x.com' }));
+  assert.equal((await E('/api/site/notice', { on: false })).status, 200);
+  assert.equal((await E('/api/site/contacts', { op: 'hide', id: 'a' })).status, 403);
+  assert.equal((await E('/api/site/flags', { flags: {} })).status, 403); assert.equal((await E('/api/site/roles', { editors: [] })).status, 403); assert.equal((await E('/api/site/export', null, 'GET')).status, 403);
+  assert.equal((await E('/api/site/get', null, 'GET')).json.settings.roles, undefined);
+  assert.equal((await call(env, token({ email: 'stranger@x.com' }))('/api/site/get', null, 'GET')).status, 404);
+  // backup round trip
+  const bk = (await S('/api/site/export', null, 'GET')).json.backup; await S('/api/site/notice', { on: true, en: 'Changed' });
+  assert.deepEqual((await S('/api/site/import', { backup: bk })).json.done.sort(), ['alert', 'contacts', 'home', 'notice', 'pages']);
+  assert.equal((await S('/api/site/get', null, 'GET')).json.settings.notice.en, bk.settings.notice.en);
+  assert.equal((await S('/api/site/import', { backup: { app: 'x' } })).status, 400);
+});
