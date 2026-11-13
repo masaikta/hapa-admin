@@ -5,6 +5,7 @@
   "workers_dev": false,
   "preview_urls": false,
   "assets": { "directory": "./site", "binding": "ASSETS", "run_worker_first": ["/*"] },
+  "triggers": { "crons": ["*/15 * * * *"] },
   "vars": { "ACCESS_TEAM": "super-brook-be88" },
   "d1_databases": [{ "binding": "DB", "database_name": "hapa-data", "database_id": "c4240550-8ec9-4331-9d53-a412b583f102" }]
   // ACCESS_TEAM is your Zero Trust team name (kept here so deploys never remove it). ACCESS_AUD is a secret set in the Cloudflare dashboard (Settings > Variables and Secrets).

@@ -1,7 +1,7 @@
 // Hapa Admin: settings for the public site, on its own subdomain (admin.homesupport.co.ke), separate from Hapa Pro.
 // Two locks: Cloudflare Access in front, and this worker verifies the Access token itself and accepts only the super administrator.
 // Until ACCESS_TEAM and ACCESS_AUD are set it refuses everything, so a half-finished setup is never open.
-import { siteApi, ensureSite, SCOPES } from './site.js';
+import { siteApi, ensureSite, SCOPES, cron } from './site.js';
 
 const SUPER_DEFAULT = ['masaikta@gmail.com'];
 export const isSuper = (env, email) => { const e = String(email || '').trim().toLowerCase(); return !!e && String(env.SUPER_ADMINS || SUPER_DEFAULT.join(',')).toLowerCase().split(',').map((x) => x.trim()).includes(e); };
@@ -40,7 +40,7 @@ export default {
     // The super administrator has everything; a second admin named under Roles gets only the areas ticked for them.
     let who = { email, super: isSuper(env, email), scopes: [] };
     if (!who.super) {
-      try { await ensureSite(env); const r = await env.DB.prepare("SELECT v FROM site_settings WHERE k='roles'").first(); const ed = ((r && JSON.parse(r.v)) || {}).editors || []; const me = ed.find((x) => x.email === email); if (me) who.scopes = (me.scopes || []).filter((x) => SCOPES.includes(x)); } catch (e) { /* no roles yet */ }
+      try { await ensureSite(env); const r = await env.DB.prepare("SELECT v FROM site_settings WHERE k='roles'").first(); const ed = ((r && JSON.parse(r.v)) || {}).editors || []; const me = ed.find((x) => x.email === email); if (me) { who.scopes = (me.scopes || []).filter((x) => SCOPES.includes(x)); who.approval = !!me.approval; who.readonly = !!me.readonly; } } catch (e) { /* no roles yet */ }
       if (!who.scopes.length) return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
     }
     if (url.pathname.startsWith('/api/')) {
@@ -56,4 +56,6 @@ export default {
     h.set('cache-control', 'no-store'); h.set('x-content-type-options', 'nosniff'); h.set('referrer-policy', 'no-referrer'); h.set('content-security-policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline' 'self'; frame-ancestors 'none'");
     return new Response(r.body, { status: r.status, headers: h });
   },
+  // Cron: publishes or takes down scheduled articles and re-checks article links about weekly.
+  async scheduled(event, env, ctx) { ctx.waitUntil(cron(env)); },
 };

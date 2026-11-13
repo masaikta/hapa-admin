@@ -85,7 +85,7 @@ test('versions, restore, alert expiry, home, roles, backup', async () => {
   assert.equal((await S('/api/site/contacts', { op: 'hide_many', ids: ['a', 'b'] })).json.contacts.hidden.length, 2);
   // second admin with limited scope
   await S('/api/site/roles', { editors: [{ email: 'Ed@X.com', scopes: ['notice', 'bogus'] }, { email: 'nope', scopes: ['notice'] }] });
-  assert.deepEqual((await S('/api/site/get', null, 'GET')).json.settings.roles.editors, [{ email: 'ed@x.com', scopes: ['notice'] }]);
+  assert.deepEqual((await S('/api/site/get', null, 'GET')).json.settings.roles.editors, [{ email: 'ed@x.com', scopes: ['notice'], approval: false, readonly: false }]);
   const E = call(env, token({ email: 'ed@x.com' }));
   assert.equal((await E('/api/site/notice', { on: false })).status, 200);
   assert.equal((await E('/api/site/contacts', { op: 'hide', id: 'a' })).status, 403);
@@ -105,4 +105,39 @@ test('draft preview link: made for an existing article, scoped, stored with an e
   const m = JSON.parse(env.db.prepare("SELECT v FROM site_settings WHERE k='previews'").get().v); const t = Object.values(m)[0]; assert.equal(t.slug, 'draft-one'); assert.ok(t.exp > Date.now() && t.exp < Date.now() + 3 * 3600e3);
   assert.equal((await S('/api/site/preview', { slug: 'missing-one' })).status, 404);
   await S('/api/site/roles', { editors: [{ email: 'ed@x.com', scopes: ['notice'] }] }); assert.equal((await call(env, token({ email: 'ed@x.com' }))('/api/site/preview', { slug: 'draft-one' })).status, 403);
+});
+
+test('article editor, scheduling, images, corrections, pause, verified, approvals and read-only', async () => {
+  const env = mkenv(); env.db.exec("CREATE TABLE articles (id INTEGER PRIMARY KEY, slug TEXT, title_en TEXT, title_sw TEXT, body_en TEXT, body_sw TEXT, county TEXT, date TEXT, status TEXT)");
+  const S = call(env, token());
+  const a = (await S('/api/site/article_save', { title_en: 'Road safety: Nairobi', body_en: 'Para one\n\nPara two', county: 'Nairobi' })).json; assert.equal(a.slug, 'road-safety-nairobi');
+  assert.equal((await S('/api/site/article_save', { title_en: 'Road safety: Nairobi', body_en: 'x' })).json.slug, 'road-safety-nairobi-2', 'slug collisions get a suffix');
+  assert.equal(env.db.prepare("SELECT status FROM articles WHERE slug='road-safety-nairobi'").get().status, 'draft', 'new articles are drafts');
+  assert.equal((await S('/api/site/article_save', { title_en: '', body_en: 'x' })).status, 400);
+  await S('/api/site/article_save', { slug: a.slug, title_en: 'Road safety', body_en: 'Edited', date: '2026-11-12' }); assert.equal((await S('/api/site/article_get?slug=' + a.slug, null, 'GET')).json.article.body_en, 'Edited');
+  // schedule: past publish time goes live straight away, then the entry clears
+  await S('/api/site/schedule', { slug: a.slug, at: '2020-01-01T08:00' }); assert.equal(env.db.prepare("SELECT status FROM articles WHERE slug=?").get(a.slug).status, 'published');
+  await S('/api/site/schedule', { slug: a.slug, at: '2099-01-01T08:00' }); assert.equal(JSON.parse(env.db.prepare("SELECT v FROM site_settings WHERE k='schedule'").get().v)[a.slug].at, '2099-01-01T08:00');
+  assert.equal((await S('/api/site/schedule', { slug: a.slug, at: '2099-01-02T08:00', off: '2099-01-01T08:00' })).status, 400, 'take-down must be after publish');
+  // images: only real jpeg/png, size limited
+  assert.equal((await S('/api/site/image', { data: '/9j/4AAQSkZJRg==' })).json.tag, '[img:1]'); assert.equal((await S('/api/site/image', { data: 'PHNjcmlwdD4=' })).status, 400); assert.equal((await S('/api/site/image', { data: '/9j/' + 'A'.repeat(700000) })).status, 400);
+  // corrections and link check guard
+  const c = (await S('/api/site/correction', { op: 'add', en: 'Fixed a date <b>', link: 'https://example.com/x' })).json.corrections; assert.equal(c.length, 1); assert.ok(!c[0].en.includes('<'));
+  assert.equal((await S('/api/site/correction', { op: 'add', en: 'x', link: 'javascript:alert(1)' })).status, 400);
+  assert.equal((await S('/api/site/checklink', { url: 'http://192.168.0.1/' })).status, 400); assert.equal((await S('/api/site/checklink', { url: 'https://localhost/' })).status, 400); assert.equal((await S('/api/site/checklink', { url: 'https://[::1]/' })).status, 400);
+  // verified dates
+  assert.equal((await S('/api/site/contacts', { op: 'verify', ids: ['a', 'b'] })).json.contacts.verified.a.length, 10); assert.equal(Object.keys((await S('/api/site/contacts', { op: 'unverify', ids: ['a'] })).json.contacts.verified).length, 1);
+  // emergency pause and resume restore what was there before
+  await S('/api/site/flags', { flags: { '/trip/': false } }); await S('/api/site/notice', { on: true, en: 'Mine' });
+  const p = await S('/api/site/pause', { on: true }); assert.ok(p.json.pause); let g = (await S('/api/site/get', null, 'GET')).json.settings; assert.equal(Object.keys(g.flags).length, 5); assert.equal(g.notice.level, 'warn');
+  await S('/api/site/pause', { on: false }); g = (await S('/api/site/get', null, 'GET')).json.settings; assert.deepEqual(g.flags, { '/trip/': false }); assert.equal(g.notice.en, 'Mine'); assert.equal(g.pause, null);
+  // approvals: a second admin's change waits; reject discards; approve applies
+  await S('/api/site/roles', { editors: [{ email: 'ed@x.com', scopes: ['notice'], approval: true }, { email: 'view@x.com', scopes: ['notice'], readonly: true }] });
+  const E = call(env, token({ email: 'ed@x.com' })); const q = await E('/api/site/notice', { on: true, en: 'Needs approval' }); assert.equal(q.status, 202);
+  assert.equal((await S('/api/site/get', null, 'GET')).json.settings.notice.en, 'Mine', 'not live yet'); const pend = (await S('/api/site/get', null, 'GET')).json.settings.pending; assert.equal(pend.length, 1);
+  assert.equal((await E('/api/site/approve', { id: pend[0].id })).status, 403, 'a second admin cannot approve');
+  await S('/api/site/approve', { id: pend[0].id }); assert.equal((await S('/api/site/get', null, 'GET')).json.settings.notice.en, 'Needs approval');
+  await E('/api/site/notice', { on: true, en: 'Bad one' }); const p2 = (await S('/api/site/get', null, 'GET')).json.settings.pending; await S('/api/site/reject', { id: p2[0].id }); assert.equal((await S('/api/site/get', null, 'GET')).json.settings.notice.en, 'Needs approval');
+  const V = call(env, token({ email: 'view@x.com' })); assert.equal((await V('/api/site/notice', { on: false })).status, 403); assert.equal((await V('/api/site/get', null, 'GET')).status, 200);
+  assert.ok((await S('/api/site/attention', null, 'GET')).json.items.length > 0); assert.equal((await S('/api/site/hits', null, 'GET')).json.ok, true);
 });
