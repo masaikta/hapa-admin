@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Hapa Admin: Site settings</title>
+<style>
+:root{--navy:#232A63;--orange:#FF8A00;--ink:#14172B;--mut:#555B7A;--line:#D9DCEA;--bg:#F4F5FA}
+*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;font:16px/1.5 system-ui,sans-serif;color:var(--ink);background:var(--bg)}
+main{max-width:60rem;margin:0 auto;padding:1rem 16px 3rem}h1{font-size:1.5rem;color:var(--navy);margin:.4rem 0}h2{font-size:1.1rem;color:var(--navy);margin:0 0 .4rem}a{color:var(--navy)}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:1rem;margin:1rem 0}.note{color:var(--mut);font-size:.9rem}.bad{color:#B71C1C;font-weight:600}
+label{display:flex;flex-direction:column;font-size:.85rem;font-weight:700;min-width:0;gap:.15rem}input,select,textarea{font:inherit;padding:.5rem;border:1px solid #b8bdd6;border-radius:8px;max-width:100%;min-width:0;background:#fff;color:var(--ink)}
+.bar{display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;margin:.6rem 0}.bar label{flex:1 1 12rem}
+button{font:inherit;font-weight:700;border:1px solid var(--navy);background:#fff;color:var(--navy);border-radius:10px;padding:.4rem .9rem;min-height:2.5rem;cursor:pointer}button.p{background:var(--orange);border-color:var(--orange);color:#14172B}button.s{min-height:2.1rem;padding:.15rem .6rem;font-size:.85rem}
+:focus-visible{outline:3px solid var(--orange);outline-offset:2px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}th,td{border-bottom:1px solid var(--line);padding:.4rem .5rem;text-align:left;vertical-align:top}th{background:#E7EAF4;color:var(--navy)}.sc{overflow:auto;max-height:26rem;border:1px solid var(--line);border-radius:10px}
+.tg{display:inline-block;background:#E7EAF4;border-radius:999px;padding:.02rem .5rem;font-size:.78rem;font-weight:700}.tg.x{background:#FDE8E8;color:#8E1B1B}.tg.e{background:#FFF4E0;color:#7A4A00}
+.chk{flex-direction:row;align-items:center;gap:.5rem;font-weight:600}.chk input{width:1.2rem;height:1.2rem;padding:0}
+#msg{position:sticky;top:.5rem;z-index:5}#msg p{margin:0;padding:.6rem .9rem;border-radius:10px;background:#E8F3EA;border-left:4px solid #2E7D32}
+@media(max-width:600px){.ctb th:nth-child(2),.ctb td:nth-child(2){display:none}.ctb td:last-child{white-space:nowrap}}
+</style></head><body><main>
+<h1>Hapa Admin <small style="font-size:.6em;color:#555B7A">Site settings</small></h1>
+<p class="note">Changes here go live on homesupport.co.ke within about a minute, with no code push. Only the super administrator can open this page. Every change is written to the log at the bottom.</p>
+<div id="gate" class="card" hidden><p class="bad" id="gatemsg"></p></div>
+<div id="msg" role="status" aria-live="polite"></div>
+<div id="app" hidden>
+<section class="card"><h2>Public notice</h2><p class="note">A short banner at the top of the home page, Emergency and Contacts pages. Leave one language empty to use the other.</p>
+<div class="bar"><label>English<textarea id="nen" rows="2" maxlength="240"></textarea></label><label>Kiswahili<textarea id="nsw" rows="2" maxlength="240"></textarea></label></div>
+<div class="bar"><label>Style<select id="nlv"><option value="info">Information</option><option value="warn">Warning</option></select></label><label>Show from<input type="date" id="nfrom"></label><label>Show until<input type="date" id="nto"></label><label class="chk"><input type="checkbox" id="non"> Show the notice</label><button type="button" class="p" id="nsave">Save notice</button></div></section>
+<section class="card"><h2>Public pages</h2><p class="note">Switch a page off and its links disappear and the address goes back to the home page.</p><div class="bar" id="pages"></div><button type="button" class="p" id="psave">Save pages</button></section>
+<section class="card"><h2>Emergency contacts</h2><p class="note">Hide or correct an entry, or add a new one. Edits replace the original; "Restore" brings it back.</p>
+<div class="bar"><label>Find<input id="cq" placeholder="name or county"></label><label>Category<select id="ccat"></select></label></div>
+<div class="sc"><table class="ctb"><thead><tr><th>Name</th><th>County</th><th>Numbers</th><th></th></tr></thead><tbody id="ct"></tbody></table></div>
+<h3>Add or edit</h3><div class="bar"><label>Name<input id="cn" maxlength="80"></label><label>Category<select id="ccat2"></select></label><label>County (empty = all Kenya)<select id="ccty"></select></label></div>
+<div class="bar"><label>Numbers (one per line; start with wa: for WhatsApp)<textarea id="cnum" rows="2"></textarea></label><label>Note (English)<input id="cen" maxlength="160"></label><label>Note (Kiswahili)<input id="csw" maxlength="160"></label></div>
+<div class="bar"><button type="button" class="p" id="cadd">Add as new contact</button><button type="button" id="csave" hidden>Save changes to this entry</button><button type="button" id="ccancel" hidden>Cancel</button></div>
+<h3>Contacts added by you</h3><div id="added"></div></section>
+<section class="card"><h2>Articles</h2><p class="note">Unpublish an article to take it off the public site, or publish a draft.</p><div class="sc"><table><thead><tr><th>Title</th><th>Date</th><th>Status</th><th></th></tr></thead><tbody id="art"></tbody></table></div></section>
+<section class="card"><h2>Change log</h2><div class="sc"><table><thead><tr><th>When (UTC)</th><th>Who</th><th>What</th><th>Detail</th></tr></thead><tbody id="log"></tbody></table></div></section>
+</div></main>
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+function say(t){var m=$('msg');m.textContent='';if(t)m.appendChild(el('p',null,t))}
+function api(a,b){var o={credentials:'same-origin'};if(b!==undefined){o.method='POST';o.headers={'content-type':'application/json'};o.body=JSON.stringify(b)}return fetch('/api/'+a,o).then(function(r){return r.json().then(function(j){j._s=r.status;return j})})}
+var ST=null,BASE=null,EDITID=null,CATN={};
+function fill(){var s=ST.notice;$('nen').value=s.en||'';$('nsw').value=s.sw||'';$('nlv').value=s.level||'info';$('nfrom').value=s.from||'';$('nto').value=s.to||'';$('non').checked=!!s.on;
+ var p=$('pages');p.textContent='';var names={'/contacts/':'Emergency contacts','/trip/':'Travel safety','/print/':'Checklists and posters','/scam/':'Scam check','/analysis/':'Analysis'};(PAGES||[]).forEach(function(x){var l=el('label','chk'),i=el('input');i.type='checkbox';i.checked=ST.flags[x]!==false;i.dataset.p=x;l.appendChild(i);l.appendChild(document.createTextNode(' '+(names[x]||x)+' ('+x+')'));p.appendChild(l)});
+ contacts()}
+var PAGES=[];
+function contacts(){var C=ST.contacts,q=$('cq').value.trim().toLowerCase(),cat=$('ccat').value,tb=$('ct');tb.textContent='';var n=0;
+ BASE.items.forEach(function(c){if(cat&&c.cat!==cat)return;var e=C.edits[c.id],v=e?Object.assign({},c,e):c;if(q&&(v.name+' '+v.county).toLowerCase().indexOf(q)<0)return;if(++n>80)return;
+  var tr=el('tr'),hid=C.hidden.indexOf(c.id)>-1;var td=el('td',null,v.name);if(hid)td.appendChild(el('span','tg x',' hidden'));if(e)td.appendChild(el('span','tg e',' edited'));tr.appendChild(td);tr.appendChild(el('td',null,v.county||'All Kenya'));tr.appendChild(el('td',null,(v.nums||[]).join(', ')));
+  var a=el('td'),h=el('button','s',hid?'Show':'Hide');h.type='button';h.onclick=function(){api('site/contacts',{op:hid?'show':'hide',id:c.id}).then(function(j){done(j,'Saved.',function(){ST.contacts=j.contacts;contacts()})})};a.appendChild(h);
+  var ed=el('button','s','Edit');ed.type='button';ed.style.marginLeft='.3rem';ed.onclick=function(){EDITID=c.id;$('cn').value=v.name;$('ccat2').value=c.cat;$('ccty').value=c.county||'';$('cnum').value=(v.nums||[]).join('\n');$('cen').value=v.en||'';$('csw').value=v.sw||'';$('cadd').hidden=true;$('csave').hidden=false;$('ccancel').hidden=false;$('cn').focus()};a.appendChild(ed);
+  if(e){var r=el('button','s','Restore');r.type='button';r.style.marginLeft='.3rem';r.onclick=function(){api('site/contacts',{op:'reset',id:c.id}).then(function(j){done(j,'Original restored.',function(){ST.contacts=j.contacts;contacts()})})};a.appendChild(r)}
+  tr.appendChild(a);tb.appendChild(tr)});
+ if(n>80)tb.appendChild(el('tr',null)).appendChild(el('td','note','Showing 80. Use Find to narrow down.')).colSpan=4;
+ var ad=$('added');ad.textContent='';if(!C.added.length)ad.appendChild(el('p','note','None yet.'));C.added.forEach(function(c){var d=el('div','bar');d.appendChild(el('span',null,c.name+' ('+(c.county||'All Kenya')+'): '+c.nums.join(', ')));var b=el('button','s','Remove');b.type='button';b.onclick=function(){api('site/contacts',{op:'remove',id:c.id}).then(function(j){done(j,'Removed.',function(){ST.contacts=j.contacts;contacts()})})};d.appendChild(b);ad.appendChild(d)})}
+function done(j,m,f){if(j.ok){say(m);if(f)f();log()}else say(j.error==='contact'?'Check the name, category and numbers (digits, spaces, + or ( ) only).':j.error==='limit'?'That is the limit for this list.':'Could not save. Try again.')}
+function read(){return{name:$('cn').value.trim(),cat:$('ccat2').value,county:$('ccty').value,nums:$('cnum').value.split('\n').map(function(x){return x.trim()}).filter(Boolean),en:$('cen').value.trim(),sw:$('csw').value.trim()}}
+function clearForm(){EDITID=null;['cn','cnum','cen','csw'].forEach(function(i){$(i).value=''});$('cadd').hidden=false;$('csave').hidden=true;$('ccancel').hidden=true}
+$('cadd').onclick=function(){api('site/contacts',{op:'add',contact:read()}).then(function(j){done(j,'Added. It shows on the public page within a minute.',function(){ST.contacts=j.contacts;clearForm();contacts()})})};
+$('csave').onclick=function(){var c=read();api('site/contacts',{op:'edit',id:EDITID,contact:{name:c.name,nums:c.nums,en:c.en,sw:c.sw}}).then(function(j){done(j,'Saved.',function(){ST.contacts=j.contacts;clearForm();contacts()})})};
+$('ccancel').onclick=clearForm;$('cq').oninput=contacts;$('ccat').onchange=contacts;
+$('nsave').onclick=function(){api('site/notice',{on:$('non').checked,en:$('nen').value,sw:$('nsw').value,level:$('nlv').value,from:$('nfrom').value,to:$('nto').value}).then(function(j){done(j,$('non').checked?'Notice saved. It shows within a minute.':'Notice is off.')})};
+$('psave').onclick=function(){var f={};[].forEach.call($('pages').querySelectorAll('input'),function(i){f[i.dataset.p]=i.checked});api('site/flags',{flags:f}).then(function(j){done(j,'Pages saved.',function(){ST.flags=j.flags})})};
+function arts(){api('site/articles').then(function(j){var tb=$('art');tb.textContent='';if(!j.ok||!j.rows.length){tb.appendChild(el('tr')).appendChild(el('td','note','No articles.')).colSpan=4;return}j.rows.forEach(function(a){var tr=el('tr');tr.appendChild(el('td',null,a.title_en));tr.appendChild(el('td',null,a.date||''));var s=el('td');s.appendChild(el('span','tg'+(a.status==='published'?'':' e'),a.status));tr.appendChild(s);var t=el('td'),b=el('button','s',a.status==='published'?'Unpublish':'Publish');b.type='button';b.onclick=function(){api('site/article',{slug:a.slug,status:a.status==='published'?'draft':'published'}).then(function(r){done(r,'Saved.',arts)})};t.appendChild(b);tr.appendChild(t);tb.appendChild(tr)})})}
+function log(){api('site/get').then(function(j){if(!j.ok)return;var tb=$('log');tb.textContent='';j.audit.forEach(function(a){var tr=el('tr');[a.at.replace('T',' ').slice(0,16),a.who,a.act,a.detail].forEach(function(x){tr.appendChild(el('td',null,x))});tb.appendChild(tr)})})}
+Promise.all([api('site/get'),fetch('/contacts-base.json').then(function(r){return r.json()})]).then(function(r){var j=r[0];if(!j.ok){$('gatemsg').textContent='Only the super administrator can open this page.';$('gate').hidden=false;return}
+ ST=j.settings;BASE=r[1];PAGES=j.pages;CATN={};BASE.cats.forEach(function(c){CATN[c[0]]=c[1]});
+ var o=el('option',null,'All categories');o.value='';$('ccat').appendChild(o);BASE.cats.forEach(function(c){var p=el('option',null,c[1]);p.value=c[0];$('ccat').appendChild(p);var q=el('option',null,c[1]);q.value=c[0];$('ccat2').appendChild(q)});
+ var k=el('option',null,'All Kenya');k.value='';$('ccty').appendChild(k);BASE.counties.forEach(function(c){var p=el('option',null,c);p.value=c;$('ccty').appendChild(p)});
+ $('app').hidden=false;fill();arts();log()}).catch(function(){$('gatemsg').textContent='Could not load.';$('gate').hidden=false});
+})();
+</script></body></html>
