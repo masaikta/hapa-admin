@@ -62,7 +62,7 @@ details.hist{margin-top:.8rem}details.hist summary{cursor:pointer;font-weight:70
 <div class="bar"><label>Numbers (one per line; start with wa: for WhatsApp)<textarea id="cnum" rows="2"></textarea></label><label>Note (English)<input id="cen" maxlength="160"></label><label>Note (Kiswahili)<input id="csw" maxlength="160"></label></div><p id="cval" class="note"></p><p class="warn" id="cw" hidden></p>
 <button type="button" class="p" id="cadd">Add contact</button><h3>Added by you</h3><div id="added"></div><details class="hist" id="ch"><summary>Previous versions</summary><div></div></details></div></section>
 
-<section id="p-articles" hidden><div class="card"><h2>Articles</h2><p class="note">Draft keeps an article off the public site. Preview opens the public page; drafts only show there while published. Publish when ready.</p><div class="sc"><table class="rs"><thead><tr><th>Title</th><th>Date</th><th>Status</th><th></th></tr></thead><tbody id="art"></tbody></table></div></div></section>
+<section id="p-articles" hidden><div class="card"><h2>Articles</h2><p class="note">Draft keeps an article off the public site. Preview opens the page exactly as visitors would see it, even for a draft, through a private link that works for 2 hours.</p><div class="sc"><table class="rs"><thead><tr><th>Title</th><th>Date</th><th>Status</th><th></th></tr></thead><tbody id="art"></tbody></table></div></div></section>
 
 <section id="p-pages" hidden><div class="card"><h2>Public pages</h2><p class="note">Switch a page off and its links disappear and the address goes back to the home page.</p><div id="pages"></div><button type="button" class="p" id="psave">Save pages</button><details class="hist" id="ph"><summary>Previous versions</summary><div></div></details></div></section>
 
@@ -183,6 +183,7 @@ $('cadd').onclick=function(){var nums=numsOf($('cnum').value);if(!$('cn').value.
 function arts(){get('site/articles').then(function(j){var tb=$('art');tb.textContent='';if(!j.ok||!j.rows.length){var tr=el('tr'),td=el('td','note','No articles.');td.colSpan=4;tr.appendChild(td);tb.appendChild(tr);return}ARTS=j.rows;
  j.rows.forEach(function(a){var tr=el('tr');tr.appendChild(el('td',null,a.title_en||a.slug));var d=el('td',null,a.date||'');d.dataset.h='Date';tr.appendChild(d);var s=el('td');s.dataset.h='Status';s.appendChild(el('span',a.status==='published'?'tg g':'tg e',a.status==='published'?'Published':'Draft'));tr.appendChild(s);
   var b=el('td');if(a.status==='published'){var o=el('a',null,'Open');o.href='https://homesupport.co.ke/a/'+a.slug;o.target='_blank';o.rel='noopener';o.style.cssText='margin-right:.6rem';b.appendChild(o)}
+  b.appendChild(btn('Preview','s',function(){var w=window.open('','_blank');api('site/preview',{slug:a.slug}).then(function(x){if(x.ok&&w){w.location=x.url;say('Preview opened. The link works for 2 hours and is not public.')}else{if(w)w.close();say('Could not make a preview link.',true)}})}));b.appendChild(document.createTextNode(' '));
   b.appendChild(btn(a.status==='published'?'Unpublish':'Publish','s',function(){if(a.status==='published'&&!confirm('Take "'+(a.title_en||a.slug)+'" off the public site?'))return;api('site/article',{slug:a.slug,status:a.status==='published'?'draft':'published'}).then(function(x){done(x,'Saved.',arts)})}));tr.appendChild(b);tb.appendChild(tr)})})}
 
 /* ---- feedback ---- */

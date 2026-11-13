@@ -98,3 +98,11 @@ test('versions, restore, alert expiry, home, roles, backup', async () => {
   assert.equal((await S('/api/site/get', null, 'GET')).json.settings.notice.en, bk.settings.notice.en);
   assert.equal((await S('/api/site/import', { backup: { app: 'x' } })).status, 400);
 });
+test('draft preview link: made for an existing article, scoped, stored with an expiry', async () => {
+  const env = mkenv(); env.db.exec("CREATE TABLE articles (id INTEGER PRIMARY KEY, slug TEXT, title_en TEXT, title_sw TEXT, body_en TEXT, county TEXT, date TEXT, status TEXT)"); env.db.exec("INSERT INTO articles (slug,title_en,status) VALUES ('draft-one','D','draft')");
+  const S = call(env, token()); const r = (await S('/api/site/preview', { slug: 'draft-one' })).json;
+  assert.match(r.url, /^https:\/\/homesupport\.co\.ke\/a\/draft-one\?preview=[a-f0-9]{32}$/);
+  const m = JSON.parse(env.db.prepare("SELECT v FROM site_settings WHERE k='previews'").get().v); const t = Object.values(m)[0]; assert.equal(t.slug, 'draft-one'); assert.ok(t.exp > Date.now() && t.exp < Date.now() + 3 * 3600e3);
+  assert.equal((await S('/api/site/preview', { slug: 'missing-one' })).status, 404);
+  await S('/api/site/roles', { editors: [{ email: 'ed@x.com', scopes: ['notice'] }] }); assert.equal((await call(env, token({ email: 'ed@x.com' }))('/api/site/preview', { slug: 'draft-one' })).status, 403);
+});

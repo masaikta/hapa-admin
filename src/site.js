@@ -182,6 +182,19 @@ export async function siteApi(env, who, act, method, body) {
     await env.DB.prepare(`INSERT INTO site_audit (at, who, act, detail) VALUES (${NOW},?,?,?)`).bind(actor, 'article ' + st, slug).run();
     return [200, { ok: true }];
   }
+  if (act === 'site/preview') {
+    const bad = need('articles'); if (bad) return bad;
+    const slug = clean(body && body.slug, 120).toLowerCase();
+    if (!slugOk(slug) || !(await env.DB.prepare('SELECT 1 x FROM articles WHERE slug=?').bind(slug).first())) return [404, { ok: false, error: 'notfound' }];
+    const m = await read(env, 'previews', {}), now = Date.now();
+    for (const k of Object.keys(m)) if (!(m[k].exp > now)) delete m[k];
+    for (const k of Object.keys(m).slice(0, Math.max(0, Object.keys(m).length - 19))) delete m[k];
+    const t = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+    m[t] = { slug, exp: now + 2 * 3600e3 };
+    await env.DB.prepare(`INSERT INTO site_settings (k, v, at, by) VALUES ('previews',?,${NOW},?) ON CONFLICT(k) DO UPDATE SET v=excluded.v, at=excluded.at, by=excluded.by`).bind(JSON.stringify(m), actor).run();
+    await env.DB.prepare(`INSERT INTO site_audit (at, who, act, detail) VALUES (${NOW},?,?,?)`).bind(actor, 'preview link', slug).run();
+    return [200, { ok: true, url: ROOT + '/a/' + slug + '?preview=' + t, minutes: 120 }];
+  }
   if (act === 'site/restore') {
     const row = await env.DB.prepare('SELECT k, v FROM site_versions WHERE id=?').bind(Number(body && body.id) || 0).first();
     if (!row || !DEF[row.k] || row.k === 'roles') return [404, { ok: false, error: 'notfound' }];
