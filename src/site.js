@@ -164,8 +164,9 @@ async function inner(env, who, act, method, body) {
     const out = { ok: true, items: [] };
     const q = async (label, sql) => { try { const r = await env.DB.prepare(sql).first(); out.items.push({ label, at: r ? Object.values(r)[0] : null }); } catch (e) { out.items.push({ label, at: null }); } };
     const { r } = await fetchT(ROOT + '/data/d.json');
-    if (r && r.ok) { try { const d = await r.json(); out.items.push({ label: 'Public data built', at: d._built || null }); for (const [k, f] of [['crimes', 'Latest crime incident'], ['attacks', 'Latest attack record'], ['road_crashes', 'Latest road crash'], ['banditry', 'Latest banditry record'], ['reports', 'Latest community report']]) { const ds = (d[k] || []).map((x) => x.date).filter(Boolean).sort(); out.items.push({ label: f, at: ds.length ? ds[ds.length - 1] : null }); } } catch (e) { out.items.push({ label: 'Public data built', at: null }); } }
+    if (r && r.ok) { try { const d = await r.json(); out.items.push({ label: 'Public data built', at: d._built || null }); for (const [k, f] of [['crimes', 'Latest crime incident'], ['attacks', 'Latest attack record'], ['road_crashes', 'Latest road crash'], ['banditry', 'Latest banditry record'], ['reports', 'Latest community report']]) { const ds = (d[k] || []).map((x) => x.date).filter(Boolean).sort(); let ov = null; try { const o = await env.DB.prepare("SELECT max(json_extract(j.value,'$.date')) d FROM overlay o, json_each(o.v) j WHERE o.k=?").bind(k).first(); ov = o && o.d; } catch (e) {} const st = ds.length ? ds[ds.length - 1] : null; out.items.push({ label: f, at: ov && (!st || ov > st) ? ov : st }); } } catch (e) { out.items.push({ label: 'Public data built', at: null }); } }
     else out.items.push({ label: 'Public data built', at: null });
+    await q('Last automatic data update (public and Pro)', 'SELECT MAX(at) FROM overlay');
     await q('Latest published article', "SELECT MAX(date) FROM articles WHERE status='published'");
     await q('Last site setting change', 'SELECT MAX(at) FROM site_settings');
     await q('Last feedback received', 'SELECT MAX(at) FROM guide_feedback');
