@@ -222,6 +222,15 @@ async function inner(env, who, act, method, body) {
     return [200, { ok: true, rows: out.slice(0, 60), counties: COUNTIES }];
   }
   if (method !== 'POST') return [405, { ok: false, error: 'method' }];
+  if (act === 'site/refresh') {
+    // Asks the hourly scheduled check to research and publish new incidents now. At most one open request per hour.
+    const bad = need('incidents'); if (bad) return bad;
+    const last = await env.DB.prepare("SELECT at FROM log WHERE note LIKE 'REQUEST:%' ORDER BY id DESC LIMIT 1").first();
+    if (last && Date.now() - Date.parse(last.at) < 3600e3) return [200, { ok: true, already: true, at: last.at }];
+    const at = new Date().toISOString();
+    await env.DB.prepare('INSERT INTO log (at, note) VALUES (?, ?)').bind(at, 'REQUEST: data update asked for in Admin').run();
+    return [200, { ok: true, at }];
+  }
   if (act === 'site/notice') {
     const bad = need('notice'); if (bad) return bad;
     const en = clean(body.en, 240), sw = clean(body.sw, 240), on = !!body.on && !!(en || sw);

@@ -158,5 +158,8 @@ test('incidents: added to the shared overlay, validated, listed, removable, vers
   assert.equal((await S('/api/site/incident', { op: 'remove', k: 'crimes', sig: ls.rows[0].sig })).status, 200);
   assert.equal(JSON.parse(env.db.prepare("SELECT v FROM overlay WHERE k='crimes'").get().v).length, 1);
   assert.equal((await S('/api/site/incident', { op: 'add', k: 'reports', county: 'Mandera', date: today, en: 'Reported road closure near town' })).status, 200);
-  assert.ok(env.db.prepare("SELECT 1 FROM site_audit WHERE act LIKE 'incident:%'").get());
+  assert.ok(env.db.prepare("SELECT 1 FROM site_audit WHERE act LIKE 'incident:%'").get());  env.db.exec('CREATE TABLE IF NOT EXISTS log (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, note TEXT)');
+  const r1 = await S('/api/site/refresh', {}); assert.equal(r1.status, 200); assert.ok(!r1.json.already);
+  const r2 = await S('/api/site/refresh', {}); assert.equal(r2.json.already, true, 'one request per hour');
+  assert.equal(env.db.prepare("SELECT count(*) n FROM log WHERE note LIKE 'REQUEST:%'").get().n, 1);
 });
