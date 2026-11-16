@@ -8,6 +8,12 @@ const clean = (v, n) => String(v == null ? '' : v).replace(/[\u0000-\u001f<>]/g,
 // A date or a date and time (East Africa Time), e.g. 2026-11-13 or 2026-11-13T14:30.
 const date = (v) => { const m = /^(\d{4}-\d{2}-\d{2})(T([01]\d|2[0-3]):[0-5]\d)?$/.exec(String(v || '')); return m && !isNaN(Date.parse(m[1] + 'T00:00:00Z')) ? String(v) : ''; };
 const NOW = "strftime('%Y-%m-%dT%H:%M:%SZ','now')";
+// Same scheme Hapa Pro's own payment flow uses, so a hand-approved code looks no different from a paid one.
+const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+const sha = async (s) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
+const CODE_AL = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no I, L, O, 0, 1 — nothing that can be misread aloud
+const newCode = () => { const c = [...crypto.getRandomValues(new Uint8Array(8))].map((x) => CODE_AL[x % CODE_AL.length]).join(''); return 'HAPA-' + c.slice(0, 4) + '-' + c.slice(4); };
+const EXPIRES = { free: null, paid31: "strftime('%Y-%m-%dT%H:%M:%SZ','now','+31 days')", paid365: "strftime('%Y-%m-%dT%H:%M:%SZ','now','+365 days')", trial90: "strftime('%Y-%m-%dT%H:%M:%SZ','now','+90 days')" };
 
 export async function ensureSite(env) {
   if (READY.has(env.DB)) return;
@@ -18,6 +24,8 @@ export async function ensureSite(env) {
     env.DB.prepare('CREATE TABLE IF NOT EXISTS page_hits (day TEXT, path TEXT, n INTEGER DEFAULT 0, PRIMARY KEY (day, path))'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS overlay (k TEXT PRIMARY KEY, v TEXT NOT NULL, at TEXT NOT NULL)'),
     env.DB.prepare('CREATE TABLE IF NOT EXISTS site_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, who TEXT, act TEXT, detail TEXT)'),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS access_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, org TEXT, email TEXT NOT NULL, role TEXT, use_case TEXT, at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', ip TEXT, decided TEXT, plan TEXT NOT NULL DEFAULT 'free')"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS codes (id INTEGER PRIMARY KEY AUTOINCREMENT, h TEXT UNIQUE NOT NULL, label TEXT NOT NULL, hint TEXT, created TEXT, last_used TEXT, uses INTEGER DEFAULT 0, revoked INTEGER DEFAULT 0, plan TEXT NOT NULL DEFAULT 'free', expires TEXT, agency TEXT, role TEXT DEFAULT 'full', ack TEXT, email TEXT)"),
   ]);
   READY.add(env.DB);
 }
@@ -214,6 +222,13 @@ async function inner(env, who, act, method, body) {
     const s = {}; for (const k of Object.keys(DEF)) if (k !== 'roles') s[k] = await read(env, k, DEF[k]);
     return [200, { ok: true, backup: { app: 'hapa-admin', v: 1, at: new Date().toISOString(), settings: s } }];
   }
+  if (act === 'site/access' && method === 'GET') {
+    if (!who.super) return [403, { ok: false, error: 'scope' }];
+    const pending = await env.DB.prepare("SELECT id, name, org, email, role, use_case, plan, at FROM access_requests WHERE status='new' ORDER BY id").all();
+    const recent = await env.DB.prepare("SELECT id, name, org, email, status, decided FROM access_requests WHERE status!='new' ORDER BY id DESC LIMIT 20").all();
+    const codes = await env.DB.prepare('SELECT id, label, hint, created, last_used, uses, revoked, plan, expires, agency, email FROM codes ORDER BY id DESC LIMIT 40').all();
+    return [200, { ok: true, pending: pending.results || [], recent: recent.results || [], codes: codes.results || [] }];
+  }
   if (act === 'site/incidents' && method === 'GET') {
     const bad = need('incidents'); if (bad) return bad;
     const out = [];
@@ -377,6 +392,33 @@ async function inner(env, who, act, method, body) {
     let v; try { v = JSON.parse(row.v); } catch (e) { return [400, { ok: false, error: 'bad' }]; }
     await write(env, row.k, v, actor, 'restore ' + row.k, 'version ' + Number(body.id));
     return [200, { ok: true, k: row.k, value: v }];
+  }
+  if (act === 'site/access_decide') {
+    if (!who.super) return [403, { ok: false, error: 'scope' }];
+    const id = Number(body && body.id) || 0, action = body && body.action;
+    const req = await env.DB.prepare("SELECT * FROM access_requests WHERE id=? AND status='new'").bind(id).first();
+    if (!req) return [404, { ok: false, error: 'notfound' }];
+    if (action === 'decline') {
+      await env.DB.batch([
+        env.DB.prepare(`UPDATE access_requests SET status='declined', decided=${NOW} WHERE id=?`).bind(id),
+        env.DB.prepare(`INSERT INTO site_audit (at, who, act, detail) VALUES (${NOW},?,?,?)`).bind(actor, 'access declined', req.name + ' <' + req.email + '>'),
+      ]);
+      return [200, { ok: true }];
+    }
+    if (action !== 'approve') return [400, { ok: false, error: 'action' }];
+    const term = body && body.term !== undefined ? body.term : 'free';
+    if (!(term in EXPIRES)) return [400, { ok: false, error: 'term' }];
+    const plan = term === 'free' || term === 'trial90' ? 'free' : 'paid';
+    const role = ['full', 'logger', 'viewer'].includes(body && body.role) ? body.role : 'full';
+    const code = newCode(), h = await sha(code);
+    const expiresSql = EXPIRES[term];
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO codes (h,label,hint,created,plan,expires,agency,role,email) VALUES (?,?,?, ${NOW}, ?, ${expiresSql ? expiresSql : 'NULL'}, ?, ?, ?)`)
+        .bind(h, (req.org || req.name).slice(0, 100), code.slice(-4), plan, req.org || req.name, role, req.email),
+      env.DB.prepare(`UPDATE access_requests SET status='approved', decided=${NOW} WHERE id=?`).bind(id),
+      env.DB.prepare(`INSERT INTO site_audit (at, who, act, detail) VALUES (${NOW},?,?,?)`).bind(actor, 'access approved', req.name + ' <' + req.email + '> (' + term + ')'),
+    ]);
+    return [200, { ok: true, code, label: req.org || req.name, email: req.email }];
   }
   if (act === 'site/roles') {
     if (!who.super) return [403, { ok: false, error: 'scope' }];

@@ -8,7 +8,7 @@ import { cleanContact, cleanNums } from '../src/site.js';
 function fakeD1() {
   const db = new DatabaseSync(':memory:');
   db.exec("CREATE TABLE ops_events (id INTEGER PRIMARY KEY AUTOINCREMENT, agency TEXT, category TEXT, date TEXT, county TEXT, subcounty TEXT, place TEXT, arrests INT, fines INT, quantity REAL, unit TEXT, note TEXT, created TEXT, code_id INT, src TEXT)");
-  db.exec("CREATE TABLE codes (id INTEGER PRIMARY KEY, h TEXT, label TEXT, agency TEXT, plan TEXT, expires TEXT, revoked INT DEFAULT 0, created TEXT, last_used TEXT, uses INT DEFAULT 0, role TEXT DEFAULT 'full', ack TEXT); CREATE TABLE sessions (th TEXT, code_id INT, at TEXT); CREATE TABLE attempts (ip TEXT, at TEXT)");
+  db.exec("CREATE TABLE codes (id INTEGER PRIMARY KEY, h TEXT, label TEXT, hint TEXT, agency TEXT, email TEXT, plan TEXT, expires TEXT, revoked INT DEFAULT 0, created TEXT, last_used TEXT, uses INT DEFAULT 0, role TEXT DEFAULT 'full', ack TEXT); CREATE TABLE sessions (th TEXT, code_id INT, at TEXT); CREATE TABLE attempts (ip TEXT, at TEXT)");
   const mk = (sql, args = []) => ({ bind: (...a) => mk(sql, a), run: async () => { const r = db.prepare(sql).run(...args); return { meta: { changes: r.changes, last_row_id: Number(r.lastInsertRowid) } }; }, first: async () => db.prepare(sql).get(...args) || null, all: async () => ({ results: db.prepare(sql).all(...args) }) });
   const o = { db, prepare: (s) => mk(s), batch: async (xs) => { const r = []; for (const x of xs) r.push(await x.run()); return r; } }; o.DB = o; return o;
 }
@@ -162,4 +162,42 @@ test('incidents: added to the shared overlay, validated, listed, removable, vers
   const r1 = await S('/api/site/refresh', {}); assert.equal(r1.status, 200); assert.ok(!r1.json.already);
   const r2 = await S('/api/site/refresh', {}); assert.equal(r2.json.already, true, 'one request per hour');
   assert.equal(env.db.prepare("SELECT count(*) n FROM log WHERE note LIKE 'REQUEST:%'").get().n, 1);
+});
+
+test('access requests: a second admin cannot decide, approve mints a real code, decline leaves none', async () => {
+  const env = mkenv(); const S = call(env, token());
+  env.db.exec("CREATE TABLE access_requests (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, org TEXT, email TEXT NOT NULL, role TEXT, use_case TEXT, at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'new', ip TEXT, decided TEXT, plan TEXT NOT NULL DEFAULT 'free')");
+  env.db.prepare("INSERT INTO access_requests (name,org,email,role,use_case,at) VALUES ('Ernest Ziro','Lola Studios','lola@example.com','Analyst or researcher','Public advocacy','2026-11-16T08:47:01Z')").run();
+  env.db.prepare("INSERT INTO access_requests (name,org,email,role,use_case,at) VALUES ('Zuma','nkt','z@example.com','Government','media purposes','2026-11-06T20:19:28Z')").run();
+
+  const list = await S('/api/site/access', null, 'GET');
+  assert.equal(list.status, 200); assert.equal(list.json.pending.length, 2);
+
+  await S('/api/site/roles', { editors: [{ email: 'ed@x.com', scopes: ['feedback'], approval: false }] });
+  const E = call(env, token({ email: 'ed@x.com' }));
+  assert.equal((await E('/api/site/access', null, 'GET')).status, 403, 'a non-super admin cannot see requests');
+  assert.equal((await E('/api/site/access_decide', { id: 1, action: 'approve' })).status, 403, 'and cannot decide them');
+
+  const bad = await S('/api/site/access_decide', { id: 999, action: 'approve' }); assert.equal(bad.status, 404);
+  const badTerm = await S('/api/site/access_decide', { id: 1, action: 'approve', term: 'forever' }); assert.equal(badTerm.status, 400);
+
+  const approve = await S('/api/site/access_decide', { id: 1, action: 'approve', role: 'full', term: 'paid31' });
+  assert.equal(approve.status, 200);
+  assert.match(approve.json.code, /^HAPA-[A-Z2-9]{4}-[A-Z2-9]{4}$/, 'a real, randomly generated code');
+  const row = env.db.prepare('SELECT * FROM access_requests WHERE id=1').get();
+  assert.equal(row.status, 'approved'); assert.ok(row.decided);
+  const codeRow = env.db.prepare("SELECT * FROM codes WHERE agency='Lola Studios'").get();
+  assert.ok(codeRow, 'the code was actually written to the codes table'); assert.equal(codeRow.email, 'lola@example.com'); assert.equal(codeRow.plan, 'paid'); assert.ok(codeRow.expires);
+  assert.notEqual(codeRow.h, approve.json.code, 'only the hash is stored, never the plaintext code');
+  assert.equal((await S('/api/site/access_decide', { id: 1, action: 'approve' })).status, 404, 'an already-decided request cannot be approved again');
+
+  const decline = await S('/api/site/access_decide', { id: 2, action: 'decline' });
+  assert.equal(decline.status, 200); assert.equal(decline.json.code, undefined, 'declining never mints a code');
+  assert.equal(env.db.prepare('SELECT status FROM access_requests WHERE id=2').get().status, 'declined');
+  assert.equal(env.db.prepare("SELECT count(*) n FROM codes WHERE agency='nkt'").get().n, 0);
+
+  const after = await S('/api/site/access', null, 'GET');
+  assert.equal(after.json.pending.length, 0); assert.equal(after.json.recent.length, 2); assert.equal(after.json.codes.length, 1);
+  assert.ok(env.db.prepare("SELECT 1 FROM site_audit WHERE act='access approved'").get());
+  assert.ok(env.db.prepare("SELECT 1 FROM site_audit WHERE act='access declined'").get());
 });

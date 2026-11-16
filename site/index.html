@@ -97,6 +97,10 @@ details.hist{margin-top:.8rem}details.hist summary{cursor:pointer;font-weight:70
 
 <section id="p-approvals" hidden><div class="card"><h2>Waiting for approval</h2><p class="note">Changes from people whose access needs your approval. Nothing here is live until you approve it.</p><div id="pend"></div></div></section>
 
+<section id="p-access" hidden><div class="card"><h2>Pro access requests</h2><p class="note">Someone asked for access to the Hapa Pro dashboard through the public site's request form. Approving gives them a sign-in code, shown once here — copy it before leaving this page, because it is stored only as a hash and cannot be shown again. Declining just closes the request; nothing is sent to them.</p><div id="acpend"></div></div>
+<div class="card"><h3>Codes issued</h3><p class="note">Every code that can currently sign in to Hapa Pro, whether approved here or paid through M-Pesa.</p><div class="sc"><table class="rs"><thead><tr><th>Who</th><th>Plan</th><th>Expires</th><th>Uses</th><th>Status</th></tr></thead><tbody id="accodes"></tbody></table></div></div>
+<div class="card"><h3>Recent decisions</h3><div class="sc"><table class="rs"><thead><tr><th>When</th><th>Name</th><th>Org</th><th>Email</th><th>Decision</th></tr></thead><tbody id="acrecent"></tbody></table></div></div></section>
+
 <section id="p-cards" hidden><div class="card"><h2>Share card</h2><p class="note">Make a picture for WhatsApp or Facebook from a notice or any short text. It downloads as a PNG.</p>
 <div class="bar"><button type="button" class="s" id="cfn">Use the notice</button><button type="button" class="s" id="cfa">Use the alert strip</button></div>
 <div class="bar"><label>Heading<input id="cdh" maxlength="60" value="Hapa safety update"></label><label>Colour<select id="cdc"><option value="#232A63">Navy</option><option value="#B71C1C">Red (urgent)</option><option value="#FF8A00">Orange</option></select></label><label>Shape<select id="cds"><option value="1080x1080">Square</option><option value="1080x1920">Phone story</option></select></label></div>
@@ -124,12 +128,12 @@ window.addEventListener('beforeunload',function(e){if(Object.keys(DIRTY).some(fu
 function lens(en,sw,id,what){var w=$(id);if(!w)return;var a=en.trim(),b=sw.trim();if(a&&!b)w.textContent='Kiswahili is empty: visitors on Kiswahili will see the English '+what+'.';else if(b&&!a)w.textContent='English is empty: visitors on English will see the Kiswahili '+what+'.';w.hidden=!(a!==b&&(!a||!b))}
 
 /* ---- tabs ---- */
-var TABS=[['overview','Overview',null],['approvals','Approvals','super'],['notice','Notice and alert',['notice','alert']],['home','Home page',['home']],['contacts','Contacts',['contacts']],['articles','Articles',['articles']],['pages','Pages','super'],['feedback','Feedback',['feedback']],['incidents','Incidents',['incidents']],['corrections','Corrections',['corrections']],['cards','Share cards',null],['health','Site health',null],['team','Team and backup','super'],['log','Change log',null]];
+var TABS=[['overview','Overview',null],['approvals','Approvals','super'],['access','Access requests','super'],['notice','Notice and alert',['notice','alert']],['home','Home page',['home']],['contacts','Contacts',['contacts']],['articles','Articles',['articles']],['pages','Pages','super'],['feedback','Feedback',['feedback']],['incidents','Incidents',['incidents']],['corrections','Corrections',['corrections']],['cards','Share cards',null],['health','Site health',null],['team','Team and backup','super'],['log','Change log',null]];
 var CUR='';
 function can(t){var r=t[2];if(!r)return true;if(r==='super')return ME.super;return ME.super||r.some(function(s){return ME.scopes.indexOf(s)>-1})}
 function show(n){if(CUR&&CUR!==n&&DIRTY[CUR]&&!confirm('You have changes here that are not saved. Leave anyway?'))return;if(CUR)DIRTY[CUR]=false;CUR=n;
  TABS.forEach(function(t){var s=$('p-'+t[0]);if(s)s.hidden=t[0]!==n});[].forEach.call($('nav').children,function(b){b.setAttribute('aria-current',b.dataset.t===n?'page':'false');var d=b.querySelector('.dot');if(d)d.hidden=true});
- try{history.replaceState(null,'','#'+n)}catch(e){}window.scrollTo(0,0);if(n==='overview')overview();if(n==='approvals')pend();if(n==='corrections')krfill();if(n==='incidents')incs();if(n==='health')visits();if(n==='cards')draw();if(n==='feedback')feedback();if(n==='articles')arts();if(n==='log')log();if(n==='home')home(false);if(n==='contacts')contacts()}
+ try{history.replaceState(null,'','#'+n)}catch(e){}window.scrollTo(0,0);if(n==='overview')overview();if(n==='approvals')pend();if(n==='access')accessTab();if(n==='corrections')krfill();if(n==='incidents')incs();if(n==='health')visits();if(n==='cards')draw();if(n==='feedback')feedback();if(n==='articles')arts();if(n==='log')log();if(n==='home')home(false);if(n==='contacts')contacts()}
 function buildNav(){var nav=$('nav');TABS.forEach(function(t){if(!can(t))return;var b=el('button',null,t[1]);b.type='button';b.dataset.t=t[0];var d=el('span','dot');d.hidden=true;b.appendChild(d);b.onclick=function(){show(t[0])};nav.appendChild(b)})}
 
 
@@ -260,6 +264,29 @@ $('pausebtn').onclick=function(){var on=!ST.pause;if(!confirm(on?'Pause the site
 function pend(){var b=$('pend');b.textContent='';var P=ST.pending||[];if(!P.length){b.appendChild(el('p','note','Nothing waiting.'));return}
  P.forEach(function(x){var c=el('div','card');c.style.margin='0 0 .6rem';c.appendChild(el('b',null,x.act.replace('site/','')+' from '+x.who));c.appendChild(el('div','note',x.at.replace('T',' ').slice(0,16)+' UTC'));var t=JSON.stringify(x.body);c.appendChild(el('pre',null,t.length>600?t.slice(0,600)+'…':t)).style.cssText='white-space:pre-wrap;word-break:break-word;font-size:.8rem;margin:.3rem 0';
   c.appendChild(btn('Approve','s p',function(){api('site/approve',{id:x.id}).then(function(j){done(j,'Approved and live.',function(){ST.pending=j.pending;pend();load()})})}));c.appendChild(document.createTextNode(' '));c.appendChild(btn('Reject','s d',function(){if(!confirm('Reject and discard this change?'))return;api('site/reject',{id:x.id}).then(function(j){done(j,'Rejected.',function(){ST.pending=j.pending;pend()})})}));b.appendChild(c)})}
+
+/* ---- access requests ---- */
+var TERMS=[['free','Free, no expiry'],['paid31','Paid, 31 days'],['paid365','Paid, 1 year'],['trial90','Free, 90-day trial']];
+function codeStatus(c){if(c.revoked)return'Revoked';if(c.expires&&c.expires<new Date().toISOString())return'Expired';return'Active'}
+function accessTab(){get('site/access').then(function(j){if(!j.ok)return;
+ var p=$('acpend');p.textContent='';if(!j.pending.length)p.appendChild(el('p','note','Nothing waiting.'));
+ j.pending.forEach(function(x){var c=el('div','card');c.style.margin='0 0 .6rem';
+  c.appendChild(el('b',null,x.name+(x.org?' · '+x.org:'')));
+  c.appendChild(el('div','note',x.role+' · '+(x.plan==='paid'?'Asked for paid':'Asked for free')+' · '+x.at.replace('T',' ').slice(0,16)+' UTC'));
+  c.appendChild(el('div',null,x.email));
+  c.appendChild(el('div','note',x.use_case||'(no reason given)'));
+  var bar=el('div','bar');
+  var role=el('select');[['full','Full'],['logger','Logger'],['viewer','Viewer (read-only)']].forEach(function(r){var o=el('option',null,r[1]);o.value=r[0];role.appendChild(o)});bar.appendChild(role);
+  var term=el('select');TERMS.forEach(function(t){var o=el('option',null,t[1]);o.value=t[0];term.appendChild(o)});bar.appendChild(term);
+  c.appendChild(bar);
+  var out=el('div','note');out.style.cssText='font-weight:700;word-break:break-all';
+  c.appendChild(btn('Approve','s p',function(){api('site/access_decide',{id:x.id,action:'approve',role:role.value,term:term.value}).then(function(r){if(!r.ok)return say(ERR[r.error]||'Could not approve.',true);out.textContent='Code: '+r.code+' — send this to '+r.email+'. It will not be shown again.';c.appendChild(out);accessTab()})}));
+  c.appendChild(document.createTextNode(' '));
+  c.appendChild(btn('Decline','s d',function(){if(!confirm('Decline the request from '+x.name+'? Nothing is sent to them.'))return;api('site/access_decide',{id:x.id,action:'decline'}).then(function(r){done(r,'Declined.',accessTab)})}));
+  p.appendChild(c)});
+ var cb=$('accodes');cb.textContent='';j.codes.forEach(function(c){var tr=el('tr');var who=(c.agency||c.label||'')+(c.email?' ('+c.email+')':'');
+  [[who,'Who'],[c.plan,'Plan'],[c.expires?ago(c.expires):'No expiry','Expires'],[String(c.uses||0),'Uses'],[codeStatus(c),'Status']].forEach(function(v){var td=el('td',null,v[0]);td.dataset.h=v[1];tr.appendChild(td)});cb.appendChild(tr)});
+ var rb=$('acrecent');rb.textContent='';j.recent.forEach(function(r){var tr=el('tr');[[(r.decided||'').replace('T',' ').slice(0,16),'When'],[r.name,'Name'],[r.org||'',  'Org'],[r.email,'Email'],[r.status,'Decision']].forEach(function(v){var td=el('td',null,v[0]);td.dataset.h=v[1];tr.appendChild(td)});rb.appendChild(tr)})})}
 
 /* ---- corrections ---- */
 function krfill(){var l=$('krlist');l.textContent='';var L=ST.corrections||[];if(!L.length)l.appendChild(el('p','note','Nothing published yet.'));L.forEach(function(c){var r=el('div','row');r.appendChild(el('span',null,c.date+': '+c.en+(c.link?' (source)':'')));r.appendChild(btn('Remove','s d',function(){if(!confirm('Remove this line from the public log?'))return;api('site/correction',{op:'remove',id:c.id}).then(function(j){done(j,'Removed.',function(){ST.corrections=j.corrections;krfill()})})}));l.appendChild(r)})}
