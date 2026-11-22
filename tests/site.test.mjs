@@ -140,6 +140,9 @@ test('article editor, scheduling, images, corrections, pause, verified, approval
   await E('/api/site/notice', { on: true, en: 'Bad one' }); const p2 = (await S('/api/site/get', null, 'GET')).json.settings.pending; await S('/api/site/reject', { id: p2[0].id }); assert.equal((await S('/api/site/get', null, 'GET')).json.settings.notice.en, 'Needs approval');
   const V = call(env, token({ email: 'view@x.com' })); assert.equal((await V('/api/site/notice', { on: false })).status, 403); assert.equal((await V('/api/site/get', null, 'GET')).status, 200);
   assert.ok((await S('/api/site/attention', null, 'GET')).json.items.length > 0); assert.equal((await S('/api/site/hits', null, 'GET')).json.ok, true);
+  // approval does not widen scope: an editor whose only scope is "notice" cannot even queue a contacts change
+  assert.equal((await E('/api/site/contacts', { op: 'hide', id: 'x-1' })).status, 403, 'approval flag is not a free pass to other areas');
+  assert.equal((await S('/api/site/get', null, 'GET')).json.settings.pending.length, 0, 'nothing was queued');
 });
 
 test('incidents: added to the shared overlay, validated, listed, removable, versioned', async () => {

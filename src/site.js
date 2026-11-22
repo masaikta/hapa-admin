@@ -91,6 +91,9 @@ export function cleanIncident(k, b) {
   return { ...base, summary: en, kind: clean(b.kind, 60) || 'Crime', killed: num(b.killed), injured: num(b.injured) };
 }
 const QUEUE = ['site/notice', 'site/alert', 'site/home', 'site/contacts', 'site/article', 'site/article_save', 'site/schedule', 'site/correction', 'site/incident'];
+// The scope each queued action needs -- checked before it goes on the pending list, not only when it is applied directly,
+// so "needs my approval" never lets someone queue up a change in an area they were not given.
+const ACT_SCOPE = { 'site/notice': 'notice', 'site/alert': 'alert', 'site/home': 'home', 'site/contacts': 'contacts', 'site/article': 'articles', 'site/article_save': 'articles', 'site/schedule': 'articles', 'site/correction': 'corrections', 'site/incident': 'incidents' };
 const todayEAT = () => new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10);
 const nowEAT = () => new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 16);
 const endOf = (v) => (v && v.length === 10 ? v + 'T23:59' : v);
@@ -481,6 +484,7 @@ export async function siteApi(env, who, act, method, body) {
   if (method === 'POST' && !who.super) {
     if (who.readonly) return [403, { ok: false, error: 'readonly' }];
     if (who.approval && QUEUE.includes(act)) {
+      if (!allowed(who, ACT_SCOPE[act])) return [403, { ok: false, error: 'scope' }];
       const P = await read(env, 'pending', []);
       if (P.length >= 30) return [400, { ok: false, error: 'limit' }];
       P.push({ id: Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), at: new Date().toISOString(), who: who.email, act, body });
