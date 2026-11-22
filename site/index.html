@@ -101,6 +101,8 @@ details.hist{margin-top:.8rem}details.hist summary{cursor:pointer;font-weight:70
 <div class="card"><h3>Codes issued</h3><p class="note">Every code that can currently sign in to Hapa Pro, whether approved here or paid through M-Pesa.</p><div class="sc"><table class="rs"><thead><tr><th>Who</th><th>Plan</th><th>Expires</th><th>Uses</th><th>Status</th></tr></thead><tbody id="accodes"></tbody></table></div></div>
 <div class="card"><h3>Recent decisions</h3><div class="sc"><table class="rs"><thead><tr><th>When</th><th>Name</th><th>Org</th><th>Email</th><th>Decision</th></tr></thead><tbody id="acrecent"></tbody></table></div></div></section>
 
+<section id="p-users" hidden><div class="card"><h2>Public sign-ups</h2><p class="note">Free accounts people made on the public site with an email and password (or Google sign-in). Read-only — this table belongs to the public site, not to Admin. <span id="usersn"></span></p><div class="sc"><table class="rs"><thead><tr><th>Name</th><th>Email</th><th>Signed up</th><th>Last signed in</th><th>Status</th></tr></thead><tbody id="userst"></tbody></table></div></div></section>
+
 <section id="p-cards" hidden><div class="card"><h2>Share card</h2><p class="note">Make a picture for WhatsApp or Facebook from a notice or any short text. It downloads as a PNG.</p>
 <div class="bar"><button type="button" class="s" id="cfn">Use the notice</button><button type="button" class="s" id="cfa">Use the alert strip</button></div>
 <div class="bar"><label>Heading<input id="cdh" maxlength="60" value="Hapa safety update"></label><label>Colour<select id="cdc"><option value="#232A63">Navy</option><option value="#B71C1C">Red (urgent)</option><option value="#FF8A00">Orange</option></select></label><label>Shape<select id="cds"><option value="1080x1080">Square</option><option value="1080x1920">Phone story</option></select></label></div>
@@ -128,12 +130,12 @@ window.addEventListener('beforeunload',function(e){if(Object.keys(DIRTY).some(fu
 function lens(en,sw,id,what){var w=$(id);if(!w)return;var a=en.trim(),b=sw.trim();if(a&&!b)w.textContent='Kiswahili is empty: visitors on Kiswahili will see the English '+what+'.';else if(b&&!a)w.textContent='English is empty: visitors on English will see the Kiswahili '+what+'.';w.hidden=!(a!==b&&(!a||!b))}
 
 /* ---- tabs ---- */
-var TABS=[['overview','Overview',null],['approvals','Approvals','super'],['access','Access requests','super'],['notice','Notice and alert',['notice','alert']],['home','Home page',['home']],['contacts','Contacts',['contacts']],['articles','Articles',['articles']],['pages','Pages','super'],['feedback','Feedback',['feedback']],['incidents','Incidents',['incidents']],['corrections','Corrections',['corrections']],['cards','Share cards',null],['health','Site health',null],['team','Team and backup','super'],['log','Change log',null]];
+var TABS=[['overview','Overview',null],['approvals','Approvals','super'],['access','Access requests','super'],['users','Public sign-ups','super'],['notice','Notice and alert',['notice','alert']],['home','Home page',['home']],['contacts','Contacts',['contacts']],['articles','Articles',['articles']],['pages','Pages','super'],['feedback','Feedback',['feedback']],['incidents','Incidents',['incidents']],['corrections','Corrections',['corrections']],['cards','Share cards',null],['health','Site health',null],['team','Team and backup','super'],['log','Change log',null]];
 var CUR='';
 function can(t){var r=t[2];if(!r)return true;if(r==='super')return ME.super;return ME.super||r.some(function(s){return ME.scopes.indexOf(s)>-1})}
 function show(n){if(CUR&&CUR!==n&&DIRTY[CUR]&&!confirm('You have changes here that are not saved. Leave anyway?'))return;if(CUR)DIRTY[CUR]=false;CUR=n;
  TABS.forEach(function(t){var s=$('p-'+t[0]);if(s)s.hidden=t[0]!==n});[].forEach.call($('nav').children,function(b){b.setAttribute('aria-current',b.dataset.t===n?'page':'false');var d=b.querySelector('.dot');if(d)d.hidden=true});
- try{history.replaceState(null,'','#'+n)}catch(e){}window.scrollTo(0,0);if(n==='overview')overview();if(n==='approvals')pend();if(n==='access')accessTab();if(n==='corrections')krfill();if(n==='incidents')incs();if(n==='health')visits();if(n==='cards')draw();if(n==='feedback')feedback();if(n==='articles')arts();if(n==='log')log();if(n==='home')home(false);if(n==='contacts')contacts()}
+ try{history.replaceState(null,'','#'+n)}catch(e){}window.scrollTo(0,0);if(n==='overview')overview();if(n==='approvals')pend();if(n==='access')accessTab();if(n==='users')usersTab();if(n==='corrections')krfill();if(n==='incidents')incs();if(n==='health')visits();if(n==='cards')draw();if(n==='feedback')feedback();if(n==='articles')arts();if(n==='log')log();if(n==='home')home(false);if(n==='contacts')contacts()}
 function buildNav(){var nav=$('nav');TABS.forEach(function(t){if(!can(t))return;var b=el('button',null,t[1]);b.type='button';b.dataset.t=t[0];var d=el('span','dot');d.hidden=true;b.appendChild(d);b.onclick=function(){show(t[0])};nav.appendChild(b)})}
 
 
@@ -287,6 +289,13 @@ function accessTab(){get('site/access').then(function(j){if(!j.ok)return;
  var cb=$('accodes');cb.textContent='';j.codes.forEach(function(c){var tr=el('tr');var who=(c.agency||c.label||'')+(c.email?' ('+c.email+')':'');
   [[who,'Who'],[c.plan,'Plan'],[c.expires?ago(c.expires):'No expiry','Expires'],[String(c.uses||0),'Uses'],[codeStatus(c),'Status']].forEach(function(v){var td=el('td',null,v[0]);td.dataset.h=v[1];tr.appendChild(td)});cb.appendChild(tr)});
  var rb=$('acrecent');rb.textContent='';j.recent.forEach(function(r){var tr=el('tr');[[(r.decided||'').replace('T',' ').slice(0,16),'When'],[r.name,'Name'],[r.org||'',  'Org'],[r.email,'Email'],[r.status,'Decision']].forEach(function(v){var td=el('td',null,v[0]);td.dataset.h=v[1];tr.appendChild(td)});rb.appendChild(tr)})})}
+
+/* ---- public sign-ups ---- */
+function userStatus(u){if(u.disabled)return'Disabled';if(u.verified==2)return'Unverified (mail was down)';if(u.verified==1)return'Verified'+(u.google?' · Google':'');return'Unverified'}
+function usersTab(){get('site/users').then(function(j){if(!j.ok)return;
+ $('usersn').textContent=j.total+' total'+(j.total>j.rows.length?' (showing the most recent '+j.rows.length+')':'.');
+ var b=$('userst');b.textContent='';if(!j.rows.length){var tr0=el('tr'),td0=el('td',null,'None yet.');td0.colSpan=5;tr0.appendChild(td0);b.appendChild(tr0)}
+ j.rows.forEach(function(u){var tr=el('tr');[[u.name||'(no name)','Name'],[u.email,'Email'],[ago(u.created),'Signed up'],[ago(u.last_login),'Last signed in'],[userStatus(u),'Status']].forEach(function(v){var td=el('td',null,v[0]);td.dataset.h=v[1];tr.appendChild(td)});b.appendChild(tr)})})}
 
 /* ---- corrections ---- */
 function krfill(){var l=$('krlist');l.textContent='';var L=ST.corrections||[];if(!L.length)l.appendChild(el('p','note','Nothing published yet.'));L.forEach(function(c){var r=el('div','row');r.appendChild(el('span',null,c.date+': '+c.en+(c.link?' (source)':'')));r.appendChild(btn('Remove','s d',function(){if(!confirm('Remove this line from the public log?'))return;api('site/correction',{op:'remove',id:c.id}).then(function(j){done(j,'Removed.',function(){ST.corrections=j.corrections;krfill()})})}));l.appendChild(r)})}

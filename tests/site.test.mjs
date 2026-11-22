@@ -204,3 +204,34 @@ test('access requests: a second admin cannot decide, approve mints a real code, 
   assert.ok(env.db.prepare("SELECT 1 FROM site_audit WHERE act='access approved'").get());
   assert.ok(env.db.prepare("SELECT 1 FROM site_audit WHERE act='access declined'").get());
 });
+
+test('public sign-ups: read-only, super-admin only, and degrades gracefully if the table is missing', async () => {
+  const env = mkenv();
+  const S = call(env, token({ super: true }));
+  await S('/api/site/roles', { editors: [{ email: 'ed@x.com', scopes: ['notice', 'alert', 'home', 'contacts', 'articles', 'corrections', 'incidents'] }] });
+  const E = call(env, token({ email: 'ed@x.com' }));
+
+  // no users table at all yet -- hapa-public owns this table, so a schema hiccup there must never break Admin
+  const missing = await S('/api/site/users', null, 'GET');
+  assert.equal(missing.status, 200); assert.equal(missing.json.ok, true);
+  assert.deepEqual(missing.json.rows, []); assert.equal(missing.json.total, 0);
+
+  env.db.exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT, password TEXT, created TEXT, last_login TEXT, verified INTEGER, disabled INTEGER, google_sub TEXT)`);
+  env.db.exec(`INSERT INTO users (name, email, password, created, last_login, verified, disabled, google_sub) VALUES
+    ('Asha Wanjiru', 'asha@example.com', 'hash', '2026-01-02T10:00:00Z', '2026-11-20T08:00:00Z', 1, 0, NULL),
+    (NULL, 'kip@example.com', '', '2026-03-01T10:00:00Z', NULL, 0, 0, NULL),
+    ('Brian Otieno', 'brian@gmail.com', '', '2026-05-05T10:00:00Z', '2026-11-01T08:00:00Z', 1, 0, 'sub-123'),
+    ('Old Account', 'gone@example.com', 'hash', '2026-02-02T10:00:00Z', NULL, 0, 1, NULL)`);
+
+  const r = await S('/api/site/users', null, 'GET');
+  assert.equal(r.status, 200); assert.equal(r.json.ok, true);
+  assert.equal(r.json.total, 4); assert.equal(r.json.rows.length, 4);
+  assert.equal(r.json.rows.every((u) => !('password' in u)), true, 'password hash is never returned, even to a super-admin');
+  const brian = r.json.rows.find((u) => u.email === 'brian@gmail.com');
+  assert.equal(brian.google, 1, 'google sign-in is flagged');
+  const asha = r.json.rows.find((u) => u.email === 'asha@example.com');
+  assert.equal(asha.google, 0);
+
+  // a non-super admin, even one with other scopes, cannot see this
+  assert.equal((await E('/api/site/users', null, 'GET')).status, 403, 'public sign-ups are super-admin only, not a per-area scope');
+});

@@ -225,6 +225,16 @@ async function inner(env, who, act, method, body) {
     const s = {}; for (const k of Object.keys(DEF)) if (k !== 'roles') s[k] = await read(env, k, DEF[k]);
     return [200, { ok: true, backup: { app: 'hapa-admin', v: 1, at: new Date().toISOString(), settings: s } }];
   }
+  if (act === 'site/users' && method === 'GET') {
+    // Free public-site accounts (homesupport.co.ke email+password sign-ups). Read-only: this table is
+    // owned and written by hapa-public, not by Admin, so a schema hiccup there never breaks this page.
+    if (!who.super) return [403, { ok: false, error: 'scope' }];
+    try {
+      const rs = await env.DB.prepare("SELECT id, name, email, created, last_login, verified, disabled, google_sub IS NOT NULL AS google FROM users ORDER BY id DESC LIMIT 500").all();
+      const total = await env.DB.prepare('SELECT COUNT(*) c FROM users').first();
+      return [200, { ok: true, rows: rs.results || [], total: (total && total.c) || 0 }];
+    } catch (e) { return [200, { ok: true, rows: [], total: 0 }]; }
+  }
   if (act === 'site/access' && method === 'GET') {
     if (!who.super) return [403, { ok: false, error: 'scope' }];
     const pending = await env.DB.prepare("SELECT id, name, org, email, role, use_case, plan, at FROM access_requests WHERE status='new' ORDER BY id").all();
