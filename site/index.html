@@ -6,6 +6,7 @@
 *{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;font:16px/1.5 system-ui,sans-serif;color:var(--ink);background:var(--bg)}
 a{color:var(--navy)}h1{font-size:1.25rem;color:#fff;margin:0}h2{font-size:1.15rem;color:var(--navy);margin:0 0 .3rem}h3{font-size:1rem;color:var(--navy);margin:1rem 0 .3rem}
 header{background:var(--navy);color:#fff;padding:.6rem 16px;display:flex;gap:.8rem;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20}header small{opacity:.8;font-size:.8rem}
+.swnav{display:flex;gap:.5rem;margin-right:auto}.swnav a{color:#fff;opacity:.85;text-decoration:none;font-weight:700;font-size:.8rem;border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:.25rem .7rem;min-height:0}.swnav a:hover,.swnav a:focus-visible{opacity:1;background:rgba(255,255,255,.14)}
 .shell{display:flex;max-width:80rem;margin:0 auto}nav{flex:0 0 13.5rem;padding:1rem 0 2rem 16px;position:sticky;top:3.4rem;align-self:flex-start}
 nav button{display:flex;width:100%;text-align:left;align-items:center;gap:.5rem;border:0;background:none;border-radius:10px;padding:.6rem .8rem;min-height:2.75rem;font:inherit;font-weight:600;color:var(--navy);cursor:pointer}nav button[aria-current=page]{background:#fff;box-shadow:0 0 0 1px var(--line)}nav .dot{width:.55rem;height:.55rem;border-radius:50%;background:var(--orange)}
 main{flex:1;min-width:0;padding:1rem 16px 4rem}.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:1rem;margin:0 0 1rem}.note{color:var(--mut);font-size:.9rem;margin:.2rem 0 .6rem}.bad{color:#B71C1C;font-weight:600}.ok{color:#1B6E2E;font-weight:600}
@@ -26,7 +27,7 @@ details.hist{margin-top:.8rem}details.hist summary{cursor:pointer;font-weight:70
 @media(max-width:820px){.shell{display:block}nav{position:static;display:flex;overflow-x:auto;padding:.5rem 8px;gap:.2rem;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:3.4rem;z-index:14}nav button{width:auto;white-space:nowrap;flex:0 0 auto;padding:.5rem .8rem}.grid2{grid-template-columns:1fr}
  table.rs,table.rs tbody,table.rs tr,table.rs td{display:block;width:100%}table.rs thead{display:none}table.rs tr{border:1px solid var(--line);border-radius:10px;margin:.5rem 0;padding:.3rem .4rem;background:#fff}table.rs td{border:0;padding:.2rem .3rem}table.rs td[data-h]::before{content:attr(data-h) ": ";font-weight:700;color:var(--mut)}.sc{max-height:none;border:0}}
 </style></head><body>
-<header><h1>Hapa Admin</h1><small id="who"></small></header>
+<header><h1>Hapa Admin</h1><nav id="swnav" class="swnav" aria-label="Switch site" hidden><a href="https://hapa.homesupport.co.ke">Pro</a><a href="https://homesupport.co.ke">Public site</a></nav><small id="who"></small></header>
 <div id="gate" class="card" style="max-width:40rem;margin:1rem auto" hidden><p class="bad" id="gatemsg"></p></div>
 <div class="shell" id="app" hidden>
 <nav id="nav" aria-label="Sections"></nav>
@@ -341,9 +342,10 @@ $('cdl').onclick=function(){draw();$('cv').toBlob(function(b){var a=document.cre
 
 function fillAll(){fillNotice();fillAlert();fillPages();fillRoles();if(BASE)contacts();home(true)}
 hist('nh','notice');hist('ah','alert');hist('hh','home');hist('ch','contacts');hist('ph','flags');
-function load(){return get('site/get').then(function(j){if(!j.ok){$('gatemsg').textContent=j.error==='scope'?'You do not have access.':'Could not load.';$('gate').hidden=false;return}ST=j.settings;ME=j.me;PAGES=j.pages;$('who').textContent=ME.email+(ME.super?' · super admin':' · limited access');document.body.classList.toggle('ro',!!ME.readonly);fillAll()})}
+function siteswitch(me){var n=$('swnav');if(n)n.hidden=!(me&&me.super)}
+function load(){return get('site/get').then(function(j){if(!j.ok){$('gatemsg').textContent=j.error==='scope'?'You do not have access.':'Could not load.';$('gate').hidden=false;return}ST=j.settings;ME=j.me;PAGES=j.pages;$('who').textContent=ME.email+(ME.super?' · super admin':' · limited access');siteswitch(ME);document.body.classList.toggle('ro',!!ME.readonly);fillAll()})}
 Promise.all([get('site/get'),fetch('/contacts-base.json').then(function(r){return r.json()}).catch(function(){return null})]).then(function(r){var j=r[0];if(!j.ok){$('gatemsg').textContent='Only an administrator can open this page.';$('gate').hidden=false;return}
- ST=j.settings;ME=j.me;PAGES=j.pages;document.body.classList.toggle('ro',!!ME.readonly);BASE=r[1]||{cats:[],counties:[],items:[]};$('who').textContent=ME.email+(ME.super?' · super admin':' · limited access');
+ ST=j.settings;ME=j.me;PAGES=j.pages;document.body.classList.toggle('ro',!!ME.readonly);BASE=r[1]||{cats:[],counties:[],items:[]};$('who').textContent=ME.email+(ME.super?' · super admin':' · limited access');siteswitch(ME);
  var o=el('option',null,'All categories');o.value='';$('ccat').appendChild(o);BASE.cats.forEach(function(c){var p=el('option',null,c[1]);p.value=c[0];$('ccat').appendChild(p);var q=el('option',null,c[1]);q.value=c[0];$('ccat2').appendChild(q)});
  var a=el('option',null,'All counties');a.value='';$('cfc').appendChild(a);var k=el('option',null,'All Kenya');k.value='';$('ccty').appendChild(k);var ac=el('option',null,'None');ac.value='';$('acty').appendChild(ac);BASE.counties.forEach(function(c){var p=el('option',null,c);p.value=c;$('cfc').appendChild(p);var ae=el('option',null,c);ae.value=c;$('acty').appendChild(ae);var q=el('option',null,c);q.value=c;$('ccty').appendChild(q)});
  buildNav();$('app').hidden=false;fillAll();get('site/articles').then(function(x){if(x.ok){ARTS=x.rows;home(true)}});var h=(location.hash||'').slice(1);show(TABS.some(function(t){return t[0]===h&&can(t)})?h:'overview')}).catch(function(){$('gatemsg').textContent='Could not load.';$('gate').hidden=false});
