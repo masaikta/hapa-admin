@@ -53,7 +53,7 @@ export default {
       try { const [st, js] = await siteApi(env, who, act, request.method, body); return J(js, st); } catch (e) { return J({ ok: false, error: 'db' }, 502); }
     }
     const r = await env.ASSETS.fetch(request); const h = new Headers(r.headers);
-    h.set('cache-control', 'no-store'); h.set('x-content-type-options', 'nosniff'); h.set('referrer-policy', 'no-referrer'); h.set('content-security-policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline' 'self'; img-src 'self' data: blob:; frame-ancestors 'none'");
+    h.set('cache-control', 'no-store'); h.set('x-content-type-options', 'nosniff'); h.set('referrer-policy', 'no-referrer'); h.set('content-security-policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline' 'self'; img-src 'self' data: blob: https://homesupport.co.ke; frame-ancestors 'none'");
     return new Response(r.body, { status: r.status, headers: h });
   },
   // Cron: publishes or takes down scheduled articles and re-checks article links about weekly.

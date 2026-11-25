@@ -342,6 +342,7 @@ $('krtest').onclick=function(){linkTest($('krlk'),$('krres'))};$('alkb').onclick
 var EA=null,AT=null;
 function showThumb(){var w=$('athumbwrap');if(AT){$('athumbpv').src='https://homesupport.co.ke/img/'+AT;w.hidden=false}else{w.hidden=true;$('athumbpv').removeAttribute('src')}}
 function artPv(){var b=document.querySelector('#pv-art .body');b.textContent='';var sw=PVS.lang==='sw',t=(sw?($('atsw').value||$('aten').value):($('aten').value||$('atsw').value)),x=sw?($('absw').value||$('aben').value):($('aben').value||$('absw').value);$('pv-art').className='pv '+PVS.dev;
+ if(AT){var th=el('img');th.src='https://homesupport.co.ke/img/'+AT;th.alt='';th.style.cssText='display:block;width:100%;max-height:10rem;object-fit:cover;border-radius:10px;margin:0 0 .6rem';b.appendChild(th)}
  b.appendChild(fakeH1(t||'Title'));x.split(/\n{2,}/).forEach(function(p){p=p.trim();if(!p)return;var m=/^\[img:(\d+)\]$/.exec(p);var e=m?el('div',null,'[ Photo '+m[1]+' ]'):el('p',null,p);if(m)e.style.cssText='background:#E7EAF4;border-radius:10px;padding:1.2rem;text-align:center;color:#555B7A;margin:.4rem 0';else e.style.cssText='margin:.4rem 0;font-size:.95rem';b.appendChild(e)})}
 function pv(){pvNotice();pvHome();artPv()}
 ['aten','atsw','aben','absw'].forEach(function(i){$(i).oninput=function(){dirty('articles');lens($('aten').value+$('aben').value,$('atsw').value+$('absw').value,'aedw','text');artPv()}});
@@ -360,8 +361,8 @@ $('aimg').onchange=function(){var f=this.files[0],inp=this;if(!f)return;var im=n
   api('site/image',{data:d}).then(function(j){inp.value='';if(!j.ok)return say(ERR[j.error]||'Could not upload the photo.',true);var t=$('aben');var pos=t.selectionStart||t.value.length;t.value=t.value.slice(0,pos)+(pos&&t.value[pos-1]!=='\n'?'\n\n':'')+j.tag+'\n\n'+t.value.slice(pos);dirty('articles');artPv();say('Photo added as '+j.tag+' in the English text. Copy the same line into the Kiswahili text to show it there too.')})};im.onerror=function(){inp.value='';say('Could not read that photo.',true)};im.src=u};
 $('athumb').onchange=function(){var f=this.files[0],inp=this;if(!f)return;var im=new Image(),u=URL.createObjectURL(f);im.onload=function(){var m=1200,r=Math.min(1,m/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*r);c.height=Math.round(im.height*r);var g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);
   var q=.82,d=c.toDataURL('image/jpeg',q).split(',')[1];while(d.length>690000&&q>.3){q-=.12;d=c.toDataURL('image/jpeg',q).split(',')[1]}
-  api('site/image',{data:d}).then(function(j){inp.value='';if(!j.ok)return say(ERR[j.error]||'Could not upload the thumbnail.',true);AT=j.id;showThumb();dirty('articles');say('Thumbnail set. Save the article to keep it.')})};im.onerror=function(){inp.value='';say('Could not read that photo.',true)};im.src=u};
-$('athumbrm').onclick=function(){AT=null;showThumb();dirty('articles')};
+  api('site/image',{data:d}).then(function(j){inp.value='';if(!j.ok)return say(ERR[j.error]||'Could not upload the thumbnail.',true);AT=j.id;showThumb();artPv();dirty('articles');say('Thumbnail set. Save the article to keep it.')})};im.onerror=function(){inp.value='';say('Could not read that photo.',true)};im.src=u};
+$('athumbrm').onclick=function(){AT=null;showThumb();artPv();dirty('articles')};
 $('alink').onclick=function(){var r=$('alinkres');r.textContent='Checking…';api('site/checkarticles',{}).then(function(j){if(!j.ok){r.textContent='Could not check.';return}var c=j.checks;r.textContent=c.total+' links checked: '+(c.bad.length?c.bad.map(function(b){return b.slug+' → '+b.url+' ('+(b.status||'no answer')+')'}).join('; '):'all working.')})};
 
 /* ---- visits ---- */
