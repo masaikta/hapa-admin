@@ -121,6 +121,12 @@ test('article editor, scheduling, images, corrections, pause, verified, approval
   assert.equal((await S('/api/site/schedule', { slug: a.slug, at: '2099-01-02T08:00', off: '2099-01-01T08:00' })).status, 400, 'take-down must be after publish');
   // images: only real jpeg/png, size limited
   assert.equal((await S('/api/site/image', { data: '/9j/4AAQSkZJRg==' })).json.tag, '[img:1]'); assert.equal((await S('/api/site/image', { data: 'PHNjcmlwdD4=' })).status, 400); assert.equal((await S('/api/site/image', { data: '/9j/' + 'A'.repeat(700000) })).status, 400);
+  // thumbnails: an article can carry one of the uploaded image ids, shown once the article is reloaded, cleared by saving with none
+  assert.equal((await S('/api/site/article_save', { slug: a.slug, title_en: 'Road safety', body_en: 'Edited', date: '2026-11-12', thumb_id: 1 })).json.ok, true);
+  assert.equal((await S('/api/site/article_get?slug=' + a.slug, null, 'GET')).json.article.thumb_id, 1);
+  assert.equal((await S('/api/site/article_save', { slug: a.slug, title_en: 'Road safety', body_en: 'Edited', date: '2026-11-12', thumb_id: 999 })).status, 400, 'an image id that was never uploaded is rejected');
+  assert.equal((await S('/api/site/article_save', { slug: a.slug, title_en: 'Road safety', body_en: 'Edited', date: '2026-11-12' })).json.ok, true);
+  assert.equal((await S('/api/site/article_get?slug=' + a.slug, null, 'GET')).json.article.thumb_id, null, 'omitting thumb_id clears it, matching the full-form save used elsewhere');
   // corrections and link check guard
   const c = (await S('/api/site/correction', { op: 'add', en: 'Fixed a date <b>', link: 'https://example.com/x' })).json.corrections; assert.equal(c.length, 1); assert.ok(!c[0].en.includes('<'));
   assert.equal((await S('/api/site/correction', { op: 'add', en: 'x', link: 'javascript:alert(1)' })).status, 400);

@@ -95,6 +95,7 @@ details.hist{margin-top:.8rem}details.hist summary{cursor:pointer;font-weight:70
 <div class="grid2"><label>Title (English)<input id="aten" maxlength="160"></label><label>Title (Kiswahili)<input id="atsw" maxlength="160"></label></div>
 <div class="bar"><label>County (optional)<select id="acty"></select></label><label>Date<input type="date" id="adate"></label></div>
 <div class="grid2"><label>Text (English)<textarea id="aben" rows="9"></textarea></label><label>Text (Kiswahili)<textarea id="absw" rows="9"></textarea></label></div><p class="warn" id="aedw" hidden></p>
+<div class="bar"><label>Thumbnail (shown with the article on the homepage)<input type="file" id="athumb" accept="image/jpeg,image/png"></label><span id="athumbwrap" class="note" hidden><img id="athumbpv" alt="" style="height:44px;border-radius:6px;vertical-align:middle;margin-right:.5rem"><button type="button" class="s" id="athumbrm">Remove</button></span></div>
 <div class="bar"><label>Add a photo (JPG or PNG)<input type="file" id="aimg" accept="image/jpeg,image/png"></label><label>Test a link<input id="alk" placeholder="https://…"></label><button type="button" class="s" id="alkb">Test</button><span id="alkr" class="note"></span></div>
 <div class="bar"><button type="button" class="p" id="asaveart">Save draft</button><button type="button" id="asaveprev">Save and preview</button><button type="button" id="aclose">Close</button></div>
 <h3>Preview</h3><div class="pv ph" id="pv-art"><div class="top">homesupport.co.ke</div><div class="body"></div></div></div>
@@ -338,16 +339,17 @@ function linkTest(inp,out){var u=inp.value.trim();if(!u){out.textContent='';retu
 $('krtest').onclick=function(){linkTest($('krlk'),$('krres'))};$('alkb').onclick=function(){linkTest($('alk'),$('alkr'))};
 
 /* ---- article editor, photos, schedule ---- */
-var EA=null;
+var EA=null,AT=null;
+function showThumb(){var w=$('athumbwrap');if(AT){$('athumbpv').src='https://homesupport.co.ke/img/'+AT;w.hidden=false}else{w.hidden=true;$('athumbpv').removeAttribute('src')}}
 function artPv(){var b=document.querySelector('#pv-art .body');b.textContent='';var sw=PVS.lang==='sw',t=(sw?($('atsw').value||$('aten').value):($('aten').value||$('atsw').value)),x=sw?($('absw').value||$('aben').value):($('aben').value||$('absw').value);$('pv-art').className='pv '+PVS.dev;
  b.appendChild(fakeH1(t||'Title'));x.split(/\n{2,}/).forEach(function(p){p=p.trim();if(!p)return;var m=/^\[img:(\d+)\]$/.exec(p);var e=m?el('div',null,'[ Photo '+m[1]+' ]'):el('p',null,p);if(m)e.style.cssText='background:#E7EAF4;border-radius:10px;padding:1.2rem;text-align:center;color:#555B7A;margin:.4rem 0';else e.style.cssText='margin:.4rem 0;font-size:.95rem';b.appendChild(e)})}
 function pv(){pvNotice();pvHome();artPv()}
 ['aten','atsw','aben','absw'].forEach(function(i){$(i).oninput=function(){dirty('articles');lens($('aten').value+$('aben').value,$('atsw').value+$('absw').value,'aedw','text');artPv()}});
 $('anew').onclick=function(){openArt(null,{})};
-function openArt(slug,a){EA=slug;$('aedh').textContent=slug?'Edit article':'Write an article';$('aten').value=a.title_en||'';$('atsw').value=a.title_sw||'';$('aben').value=a.body_en||'';$('absw').value=a.body_sw||'';$('acty').value=a.county||'';$('adate').value=(a.date||eat().slice(0,10)).slice(0,10);$('aed').hidden=false;$('aed').scrollIntoView();dirty('articles',false);artPv()}
+function openArt(slug,a){EA=slug;AT=a.thumb_id||null;showThumb();$('aedh').textContent=slug?'Edit article':'Write an article';$('aten').value=a.title_en||'';$('atsw').value=a.title_sw||'';$('aben').value=a.body_en||'';$('absw').value=a.body_sw||'';$('acty').value=a.county||'';$('adate').value=(a.date||eat().slice(0,10)).slice(0,10);$('aed').hidden=false;$('aed').scrollIntoView();dirty('articles',false);artPv()}
 function editArt(slug){get('site/article_get?slug='+slug).then(function(j){if(j.ok)openArt(slug,j.article);else say('Could not open that article.',true)})}
 $('aclose').onclick=function(){if(DIRTY.articles&&!confirm('Close without saving your changes?'))return;$('aed').hidden=true;dirty('articles',false)};
-function saveArt(then){return api('site/article_save',{slug:EA||'',title_en:$('aten').value,title_sw:$('atsw').value,body_en:$('aben').value,body_sw:$('absw').value,county:$('acty').value,date:$('adate').value}).then(function(j){done(j,'Saved as a draft.',function(){EA=j.slug;dirty('articles',false);$('aedh').textContent='Edit article';arts();if(then)then(j.slug)})})}
+function saveArt(then){return api('site/article_save',{slug:EA||'',title_en:$('aten').value,title_sw:$('atsw').value,body_en:$('aben').value,body_sw:$('absw').value,county:$('acty').value,date:$('adate').value,thumb_id:AT||''}).then(function(j){done(j,'Saved as a draft.',function(){EA=j.slug;dirty('articles',false);$('aedh').textContent='Edit article';arts();if(then)then(j.slug)})})}
 $('asaveart').onclick=function(){saveArt()};
 $('asaveprev').onclick=function(){var w=window.open('','_blank');saveArt(function(slug){api('site/preview',{slug:slug}).then(function(x){if(x.ok&&w)w.location=x.url;else if(w)w.close()})})};
 function schedArt(a){$('asch').hidden=false;$('aschh').textContent='Schedule: '+(a.title_en||a.slug);var sc=(ST.schedule||{})[a.slug]||{};$('sat').value=dt(sc.at);$('soff').value=dt(sc.off,1);$('asch').dataset.slug=a.slug;$('asch').scrollIntoView()}
@@ -356,6 +358,10 @@ $('sclear').onclick=function(){api('site/schedule',{slug:$('asch').dataset.slug,
 $('aimg').onchange=function(){var f=this.files[0],inp=this;if(!f)return;var im=new Image(),u=URL.createObjectURL(f);im.onload=function(){var m=1200,r=Math.min(1,m/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*r);c.height=Math.round(im.height*r);var g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);
   var q=.82,d=c.toDataURL('image/jpeg',q).split(',')[1];while(d.length>690000&&q>.3){q-=.12;d=c.toDataURL('image/jpeg',q).split(',')[1]}
   api('site/image',{data:d}).then(function(j){inp.value='';if(!j.ok)return say(ERR[j.error]||'Could not upload the photo.',true);var t=$('aben');var pos=t.selectionStart||t.value.length;t.value=t.value.slice(0,pos)+(pos&&t.value[pos-1]!=='\n'?'\n\n':'')+j.tag+'\n\n'+t.value.slice(pos);dirty('articles');artPv();say('Photo added as '+j.tag+' in the English text. Copy the same line into the Kiswahili text to show it there too.')})};im.onerror=function(){inp.value='';say('Could not read that photo.',true)};im.src=u};
+$('athumb').onchange=function(){var f=this.files[0],inp=this;if(!f)return;var im=new Image(),u=URL.createObjectURL(f);im.onload=function(){var m=1200,r=Math.min(1,m/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*r);c.height=Math.round(im.height*r);var g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);
+  var q=.82,d=c.toDataURL('image/jpeg',q).split(',')[1];while(d.length>690000&&q>.3){q-=.12;d=c.toDataURL('image/jpeg',q).split(',')[1]}
+  api('site/image',{data:d}).then(function(j){inp.value='';if(!j.ok)return say(ERR[j.error]||'Could not upload the thumbnail.',true);AT=j.id;showThumb();dirty('articles');say('Thumbnail set. Save the article to keep it.')})};im.onerror=function(){inp.value='';say('Could not read that photo.',true)};im.src=u};
+$('athumbrm').onclick=function(){AT=null;showThumb();dirty('articles')};
 $('alink').onclick=function(){var r=$('alinkres');r.textContent='Checking…';api('site/checkarticles',{}).then(function(j){if(!j.ok){r.textContent='Could not check.';return}var c=j.checks;r.textContent=c.total+' links checked: '+(c.bad.length?c.bad.map(function(b){return b.slug+' → '+b.url+' ('+(b.status||'no answer')+')'}).join('; '):'all working.')})};
 
 /* ---- visits ---- */

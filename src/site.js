@@ -28,6 +28,8 @@ export async function ensureSite(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS codes (id INTEGER PRIMARY KEY AUTOINCREMENT, h TEXT UNIQUE NOT NULL, label TEXT NOT NULL, hint TEXT, created TEXT, last_used TEXT, uses INTEGER DEFAULT 0, revoked INTEGER DEFAULT 0, plan TEXT NOT NULL DEFAULT 'free', expires TEXT, agency TEXT, role TEXT DEFAULT 'full', ack TEXT, email TEXT)"),
   ]);
   READY.add(env.DB);
+  // The live `articles` table predates this file and is migrated lazily, the same way as everything else here.
+  await env.DB.prepare('ALTER TABLE articles ADD COLUMN thumb_id INTEGER').run().catch(() => {});
 }
 export function cleanNums(a) {
   const out = [];
@@ -160,7 +162,7 @@ async function inner(env, who, act, method, body) {
   }
   if (act === 'site/articles' && method === 'GET') {
     const bad = need('articles'); if (bad) return bad;
-    try { const rs = await env.DB.prepare('SELECT slug, title_en, county, date, status FROM articles ORDER BY date DESC, id DESC LIMIT 100').all(); return [200, { ok: true, rows: rs.results || [] }]; } catch (e) { return [200, { ok: true, rows: [] }]; }
+    try { const rs = await env.DB.prepare('SELECT slug, title_en, county, date, status, thumb_id FROM articles ORDER BY date DESC, id DESC LIMIT 100').all(); return [200, { ok: true, rows: rs.results || [] }]; } catch (e) { return [200, { ok: true, rows: [] }]; }
   }
   if (act === 'site/feedback' && method === 'GET') {
     const bad = need('feedback'); if (bad) return bad;
@@ -195,7 +197,7 @@ async function inner(env, who, act, method, body) {
   }
   if (act === 'site/article_get' && method === 'GET') {
     const bad = need('articles'); if (bad) return bad;
-    const a = await env.DB.prepare('SELECT slug, title_en, title_sw, body_en, body_sw, county, date, status FROM articles WHERE slug=?').bind(clean(body && body.slug, 120).toLowerCase()).first();
+    const a = await env.DB.prepare('SELECT slug, title_en, title_sw, body_en, body_sw, county, date, status, thumb_id FROM articles WHERE slug=?').bind(clean(body && body.slug, 120).toLowerCase()).first();
     return a ? [200, { ok: true, article: a }] : [404, { ok: false, error: 'notfound' }];
   }
   if (act === 'site/images' && method === 'GET') {
@@ -335,15 +337,22 @@ async function inner(env, who, act, method, body) {
     const bd = (v) => String(v == null ? '' : v).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').replace(/\r/g, '').trim().slice(0, 20000);
     if (!t_en || !bd(b.body_en)) return [400, { ok: false, error: 'article' }];
     const dt = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date || '')) ? b.date : todayEAT(), county = clean(b.county, 30);
+    let thumb_id = null;
+    if (b.thumb_id !== null && b.thumb_id !== undefined && b.thumb_id !== '') {
+      const n = Number(b.thumb_id);
+      if (!Number.isInteger(n) || n <= 0) return [400, { ok: false, error: 'article' }];
+      if (!(await env.DB.prepare('SELECT 1 x FROM site_images WHERE id=?').bind(n).first())) return [400, { ok: false, error: 'article' }];
+      thumb_id = n;
+    }
     let slug = clean(b.slug, 90).toLowerCase();
     if (slug) {
       if (!slugOk(slug)) return [400, { ok: false, error: 'article' }];
-      const r = await env.DB.prepare('UPDATE articles SET title_en=?, title_sw=?, body_en=?, body_sw=?, county=?, date=? WHERE slug=?').bind(t_en, t_sw, bd(b.body_en), bd(b.body_sw), county, dt, slug).run();
+      const r = await env.DB.prepare('UPDATE articles SET title_en=?, title_sw=?, body_en=?, body_sw=?, county=?, date=?, thumb_id=? WHERE slug=?').bind(t_en, t_sw, bd(b.body_en), bd(b.body_sw), county, dt, thumb_id, slug).run();
       if (!(r.meta && r.meta.changes)) return [404, { ok: false, error: 'notfound' }];
     } else {
       const base = slugify(t_en) || 'article'; slug = base.length < 3 ? base + '-post' : base;
       for (let i = 2; await env.DB.prepare('SELECT 1 x FROM articles WHERE slug=?').bind(slug).first(); i++) slug = base + '-' + i;
-      await env.DB.prepare("INSERT INTO articles (slug, title_en, title_sw, body_en, body_sw, county, date, status) VALUES (?,?,?,?,?,?,?,'draft')").bind(slug, t_en, t_sw, bd(b.body_en), bd(b.body_sw), county, dt).run();
+      await env.DB.prepare("INSERT INTO articles (slug, title_en, title_sw, body_en, body_sw, county, date, status, thumb_id) VALUES (?,?,?,?,?,?,?,'draft',?)").bind(slug, t_en, t_sw, bd(b.body_en), bd(b.body_sw), county, dt, thumb_id).run();
     }
     await env.DB.prepare(`INSERT INTO site_audit (at, who, act, detail) VALUES (${NOW},?,?,?)`).bind(actor, 'article saved', slug).run();
     return [200, { ok: true, slug }];
